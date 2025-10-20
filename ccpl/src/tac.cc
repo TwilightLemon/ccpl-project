@@ -785,6 +785,7 @@ void TACGenerator::print_symbol_table(std::ostream& os) {
         }
         os << std::endl;
     }
+    
     //sym_tab_local不会打印，因为离开函数作用域后局部符号表会被清空
     os << std::endl;
 }

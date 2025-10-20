@@ -1,0 +1,36 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug CCPL - Custom File",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/ccpl/build/ccpl",
+            "args": [
+                "${input:testFile}"
+            ],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/ccpl",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "Compile CCPL",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ],
+    "inputs": [
+        {
+            "id": "testFile",
+            "type": "promptString",
+            "description": "Enter the path to the test file (or use ${file} for current file)",
+            "default": "${file}"
+        }
+    ]
+}

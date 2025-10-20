@@ -1,5 +1,6 @@
 #include "parser.tab.hh"
 #include "tac.hh"
+#include "opt.hh"
 #include <iostream>
 
 int main(int argc, char* argv[]) {
@@ -24,6 +25,9 @@ int main(int argc, char* argv[]) {
         yy::parser parser;
         int result = parser.parse();
         fclose(input_file);
+
+        TACOptimizer opt(tac_gen.get_tac_first());
+        opt.optimize();
 
         tac_gen.print_symbol_table();
         tac_gen.print_tac();

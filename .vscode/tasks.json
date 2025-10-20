@@ -1,0 +1,66 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build Flex Lexer",
+            "type": "shell",
+            "command": "flex",
+            "args": [
+                "-o",
+                "${workspaceFolder}/ccpl/build/lex.yy.cc",
+                "${workspaceFolder}/ccpl/src/lexer.l"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Build Bison Parser",
+            "type": "shell",
+            "command": "bison",
+            "args": [
+                "-d",
+                "-o",
+                "${workspaceFolder}/ccpl/build/parser.tab.cc",
+                "${workspaceFolder}/ccpl/src/parser.y"
+            ],
+            "problemMatcher": [],
+            "dependsOn": ["Build Flex Lexer"]
+        },
+        {
+            "label": "Compile CCPL",
+            "type": "shell",
+            "command": "g++",
+            "args": [
+                "-std=c++17",
+                "-g3",
+                "-O0",
+                "-I",
+                "${workspaceFolder}/ccpl/build",
+                "-I",
+                "${workspaceFolder}/ccpl/src",
+                "-o",
+                "${workspaceFolder}/ccpl/build/ccpl",
+                "${workspaceFolder}/ccpl/build/parser.tab.cc",
+                "${workspaceFolder}/ccpl/build/lex.yy.cc",
+                "${workspaceFolder}/ccpl/src/main.cc",
+                "${workspaceFolder}/ccpl/src/tac.cc",
+                "${workspaceFolder}/ccpl/src/opt.cc"
+            ],
+            "problemMatcher": ["$gcc"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": ["Build Bison Parser"]
+        },
+        {
+            "label": "Clean Build",
+            "type": "shell",
+            "command": "rm",
+            "args": [
+                "-f",
+                "${workspaceFolder}/ccpl/build/*"
+            ],
+            "problemMatcher": []
+        }
+    ]
+}
