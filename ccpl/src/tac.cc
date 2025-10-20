@@ -7,16 +7,27 @@ TACGenerator tac_gen;
 
 TACGenerator::TACGenerator() 
     : scope(SYM_SCOPE::GLOBAL), next_tmp(0), next_label(1), 
+      current_var_type(DATA_TYPE::UNDEF), current_func(nullptr),
       tac_first(nullptr), tac_last(nullptr) {}
 
 void TACGenerator::init() {
     scope = SYM_SCOPE::GLOBAL;
     next_tmp = 0;
     next_label = 1;
+    current_var_type = DATA_TYPE::UNDEF;
+    current_func = nullptr;
     sym_tab_global.clear();
     sym_tab_local.clear();
     tac_first = nullptr;
     tac_last = nullptr;
+}
+
+void TACGenerator::set_current_type(DATA_TYPE type) {
+    current_var_type = type;
+}
+
+DATA_TYPE TACGenerator::get_current_type() const {
+    return current_var_type;
 }
 
 void TACGenerator::complete() {
@@ -48,7 +59,7 @@ std::shared_ptr<SYM> TACGenerator::lookup_sym(const std::string& name) {
     return nullptr;
 }
 
-std::shared_ptr<SYM> TACGenerator::mk_var(const std::string& name) {
+std::shared_ptr<SYM> TACGenerator::mk_var(const std::string& name, DATA_TYPE dtype) {
     auto sym = lookup_sym(name);
     
     if (sym != nullptr) {
@@ -58,10 +69,11 @@ std::shared_ptr<SYM> TACGenerator::mk_var(const std::string& name) {
     
     sym = std::make_shared<SYM>();
     sym->type = SYM_TYPE::VAR;
+    sym->data_type = dtype;
     sym->name = name;
     sym->scope = scope;
     sym->offset = -1;
-
+    
     if (scope == SYM_SCOPE::LOCAL) {
         sym_tab_local[name] = sym;
     } else {
@@ -71,14 +83,15 @@ std::shared_ptr<SYM> TACGenerator::mk_var(const std::string& name) {
     return sym;
 }
 
-std::shared_ptr<SYM> TACGenerator::mk_tmp() {
+std::shared_ptr<SYM> TACGenerator::mk_tmp(DATA_TYPE dtype) {
     std::string name = "t" + std::to_string(next_tmp++);
     auto sym = std::make_shared<SYM>();
     sym->type = SYM_TYPE::VAR;
+    sym->data_type = dtype;
     sym->name = name;
     sym->scope = scope;
     sym->offset = -1;
-
+    
     if (scope == SYM_SCOPE::LOCAL) {
         sym_tab_local[name] = sym;
     } else {
@@ -86,9 +99,7 @@ std::shared_ptr<SYM> TACGenerator::mk_tmp() {
     }
     
     return sym;
-}
-
-std::shared_ptr<SYM> TACGenerator::mk_const(int value) {
+}std::shared_ptr<SYM> TACGenerator::mk_const(int value) {
     std::string name = std::to_string(value);
     
     auto it = sym_tab_global.find(name);
@@ -97,7 +108,8 @@ std::shared_ptr<SYM> TACGenerator::mk_const(int value) {
     }
     
     auto sym = std::make_shared<SYM>();
-    sym->type = SYM_TYPE::INT;
+    sym->type = SYM_TYPE::CONST_INT;
+    sym->data_type = DATA_TYPE::INT;
     sym->name = name;
     sym->value = value;
     sym->scope = SYM_SCOPE::GLOBAL;
@@ -115,7 +127,8 @@ std::shared_ptr<SYM> TACGenerator::mk_const_char(char value) {
     }
     
     auto sym = std::make_shared<SYM>();
-    sym->type = SYM_TYPE::CHAR;
+    sym->type = SYM_TYPE::CONST_CHAR;
+    sym->data_type = DATA_TYPE::CHAR;
     sym->name = name;
     sym->value = value;
     sym->scope = SYM_SCOPE::GLOBAL;
@@ -166,7 +179,7 @@ std::shared_ptr<SYM> TACGenerator::get_var(const std::string& name) {
     return sym;
 }
 
-std::shared_ptr<SYM> TACGenerator::declare_func(const std::string& name) {
+std::shared_ptr<SYM> TACGenerator::declare_func(const std::string& name, DATA_TYPE return_type) {
     auto sym = sym_tab_global.find(name);
     
     if (sym != sym_tab_global.end()) {
@@ -180,10 +193,13 @@ std::shared_ptr<SYM> TACGenerator::declare_func(const std::string& name) {
     
     auto func_sym = std::make_shared<SYM>();
     func_sym->type = SYM_TYPE::FUNC;
+    func_sym->data_type = return_type;
+    func_sym->return_type = return_type;
     func_sym->name = name;
     func_sym->scope = SYM_SCOPE::GLOBAL;
     
     sym_tab_global[name] = func_sym;
+    current_func = func_sym;
     return func_sym;
 }
 
@@ -216,12 +232,19 @@ std::shared_ptr<TAC> TACGenerator::join_tac(std::shared_ptr<TAC> c1, std::shared
     return c2;
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name) {
-    return mk_tac(TAC_OP::VAR, mk_var(name));
+std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype) {
+    return mk_tac(TAC_OP::VAR, mk_var(name, dtype));
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_para(const std::string& name) {
-    return mk_tac(TAC_OP::FORMAL, mk_var(name));
+std::shared_ptr<TAC> TACGenerator::declare_para(const std::string& name, DATA_TYPE dtype) {
+    auto sym = mk_var(name, dtype);
+    
+    // Add parameter type to current function
+    if (current_func != nullptr) {
+        current_func->param_types.push_back(dtype);
+    }
+    
+    return mk_tac(TAC_OP::FORMAL, sym);
 }
 
 std::shared_ptr<TAC> TACGenerator::do_func(std::shared_ptr<SYM> func,
@@ -251,6 +274,9 @@ std::shared_ptr<TAC> TACGenerator::do_assign(std::shared_ptr<SYM> var, std::shar
         error("Assignment to non-variable");
         return nullptr;
     }
+    
+    // Type checking
+    check_assignment_type(var, exp);
     
     auto code = mk_tac(TAC_OP::COPY, var, exp->place);
     code->prev = exp->code;
@@ -283,8 +309,15 @@ std::shared_ptr<TAC> TACGenerator::do_output(std::shared_ptr<SYM> sym) {
 
 std::shared_ptr<TAC> TACGenerator::do_return(std::shared_ptr<EXP> exp) {
     if (exp == nullptr) {
+        // Check void return
+        if (current_func && current_func->return_type != DATA_TYPE::VOID) {
+            warning("Non-void function should return a value");
+        }
         return mk_tac(TAC_OP::RETURN);
     }
+    
+    // Type checking
+    check_return_type(exp);
     
     auto tac = mk_tac(TAC_OP::RETURN, exp->place);
     tac->prev = exp->code;
@@ -411,29 +444,64 @@ std::shared_ptr<EXP> TACGenerator::mk_exp(std::shared_ptr<SYM> place,
 std::shared_ptr<EXP> TACGenerator::do_bin(TAC_OP op, 
                                            std::shared_ptr<EXP> exp1, 
                                            std::shared_ptr<EXP> exp2) {
-    auto temp = mk_tmp();
+    // Infer result type
+    DATA_TYPE result_type = infer_binary_type(exp1->data_type, exp2->data_type);
+    
+    auto temp = mk_tmp(result_type);
     auto temp_decl = mk_tac(TAC_OP::VAR, temp);
     temp_decl->prev = join_tac(exp1->code, exp2->code);
     
     auto ret = mk_tac(op, temp, exp1->place, exp2->place);
     ret->prev = temp_decl;
     
-    return mk_exp(temp, ret);
+    auto exp = mk_exp(temp, ret);
+    exp->data_type = result_type;
+    return exp;
 }
 
 std::shared_ptr<EXP> TACGenerator::do_un(TAC_OP op, std::shared_ptr<EXP> exp) {
-    auto temp = mk_tmp();
+    // Unary operations preserve the type
+    DATA_TYPE result_type = exp->data_type;
+    
+    auto temp = mk_tmp(result_type);
     auto temp_decl = mk_tac(TAC_OP::VAR, temp);
     temp_decl->prev = exp->code;
     
     auto ret = mk_tac(op, temp, exp->place);
     ret->prev = temp_decl;
     
-    return mk_exp(temp, ret);
+    auto result = mk_exp(temp, ret);
+    result->data_type = result_type;
+    return result;
 }
 
 std::shared_ptr<EXP> TACGenerator::do_call_ret(const std::string& name, std::shared_ptr<EXP> arglist) {
-    auto ret = mk_tmp();
+    // Look up function to get return type
+    auto func_sym = lookup_sym(name);
+    DATA_TYPE return_type = DATA_TYPE::INT;  // Default
+    
+    if (func_sym != nullptr && func_sym->type == SYM_TYPE::FUNC) {
+        return_type = func_sym->return_type;
+        
+        // Type check arguments
+        int param_count = 0;
+        for (auto arg = arglist; arg != nullptr; arg = arg->next) {
+            if (param_count < func_sym->param_types.size()) {
+                if (!check_type_compatibility(arg->data_type, func_sym->param_types[param_count])) {
+                    warning("Type mismatch in function call argument " + std::to_string(param_count + 1));
+                }
+            }
+            param_count++;
+        }
+        
+        if (param_count != func_sym->param_types.size()) {
+            warning("Argument count mismatch in function call to " + name);
+        }
+    } else {
+        warning("Function not declared: " + name);
+    }
+    
+    auto ret = mk_tmp(return_type);
     auto code = mk_tac(TAC_OP::VAR, ret);
     
     // Generate code for all arguments
@@ -458,7 +526,9 @@ std::shared_ptr<EXP> TACGenerator::do_call_ret(const std::string& name, std::sha
     temp->prev = code;
     code = temp;
     
-    return mk_exp(ret, code);
+    auto exp = mk_exp(ret, code);
+    exp->data_type = return_type;
+    return exp;
 }
 
 void TACGenerator::enter_scope() {
@@ -486,13 +556,13 @@ std::string TACGenerator::sym_to_string(std::shared_ptr<SYM> s) {
             return oss.str();
         }
         
-        case SYM_TYPE::INT:
+        case SYM_TYPE::CONST_INT:
             if (std::holds_alternative<int>(s->value)) {
                 return std::to_string(std::get<int>(s->value));
             }
             return s->name;
             
-        case SYM_TYPE::CHAR:
+        case SYM_TYPE::CONST_CHAR:
             if (std::holds_alternative<char>(s->value)) {
                 return "'" + std::string(1, std::get<char>(s->value)) + "'";
             }
@@ -556,6 +626,9 @@ std::string TACGenerator::tac_to_string(std::shared_ptr<TAC> t) {
             break;
         case TAC_OP::VAR:
             oss << "var " << sym_to_string(t->a);
+            if(t->a->data_type != DATA_TYPE::UNDEF) {
+                oss << " : " << data_type_to_string(t->a->data_type);
+            }
             break;
         case TAC_OP::FORMAL:
             oss << "formal " << sym_to_string(t->a);
@@ -607,6 +680,111 @@ void TACGenerator::print_tac(std::ostream& os) {
     }
 }
 
+bool TACGenerator::check_type_compatibility(DATA_TYPE t1, DATA_TYPE t2) {
+    if (t1 == DATA_TYPE::UNDEF || t2 == DATA_TYPE::UNDEF) {
+        return true;  // Allow undefined types (error already reported)
+    }
+    
+    // INT and CHAR are compatible (with implicit conversion)
+    if ((t1 == DATA_TYPE::INT || t1 == DATA_TYPE::CHAR) &&
+        (t2 == DATA_TYPE::INT || t2 == DATA_TYPE::CHAR)) {
+        return true;
+    }
+    
+    return t1 == t2;
+}
+
+DATA_TYPE TACGenerator::infer_binary_type(DATA_TYPE t1, DATA_TYPE t2) {
+    if (t1 == DATA_TYPE::UNDEF || t2 == DATA_TYPE::UNDEF) {
+        return DATA_TYPE::INT;  // Default to INT
+    }
+    
+    // If either is INT, result is INT
+    if (t1 == DATA_TYPE::INT || t2 == DATA_TYPE::INT) {
+        return DATA_TYPE::INT;
+    }
+    
+    // Both CHAR -> CHAR
+    if (t1 == DATA_TYPE::CHAR && t2 == DATA_TYPE::CHAR) {
+        return DATA_TYPE::CHAR;
+    }
+    
+    return DATA_TYPE::INT;
+}
+
+void TACGenerator::check_assignment_type(std::shared_ptr<SYM> var, std::shared_ptr<EXP> exp) {
+    if (!check_type_compatibility(var->data_type, exp->data_type)) {
+        warning("Type mismatch in assignment: " + 
+                data_type_to_string(var->data_type) + " = " + 
+                data_type_to_string(exp->data_type));
+    }
+}
+
+void TACGenerator::check_return_type(std::shared_ptr<EXP> exp) {
+    if (current_func == nullptr) {
+        return;
+    }
+    
+    if (!check_type_compatibility(current_func->return_type, exp->data_type)) {
+        warning("Return type mismatch: expected " + 
+                data_type_to_string(current_func->return_type) + 
+                ", got " + data_type_to_string(exp->data_type));
+    }
+}
+
+std::string TACGenerator::data_type_to_string(DATA_TYPE type) {
+    switch (type) {
+        case DATA_TYPE::VOID: return "void";
+        case DATA_TYPE::INT: return "int";
+        case DATA_TYPE::CHAR: return "char";
+        case DATA_TYPE::UNDEF: return "undefined";
+        default: return "unknown";
+    }
+}
+
 void TACGenerator::error(const std::string& msg) {
     std::cerr << "TAC Error: " << msg << std::endl;
+}
+
+void TACGenerator::warning(const std::string& msg) {
+    std::cerr << "TAC Warning: " << msg << std::endl;
+}
+
+void TACGenerator::print_symbol_table(std::ostream& os) {
+    os << "\n=== Global Symbol Table ===" << std::endl;
+    for (const auto& pair : sym_tab_global) {
+        const auto& sym = pair.second;
+        os << std::setw(6) << sym->name << " : ";
+        
+        switch (sym->type) {
+            case SYM_TYPE::VAR:
+                os << "VAR[" << data_type_to_string(sym->data_type) << "]";
+                if (sym->offset >= 0) {
+                    os << " @" << sym->offset;
+                }
+                break;
+            case SYM_TYPE::FUNC:
+                os << "FUNC[" << data_type_to_string(sym->return_type) << "](";
+                for (size_t i = 0; i < sym->param_types.size(); ++i) {
+                    if (i > 0) os << ", ";
+                    os << data_type_to_string(sym->param_types[i]);
+                }
+                os << ")";
+                break;
+            case SYM_TYPE::CONST_INT:
+                os << "CONST_INT = " << std::get<int>(sym->value);
+                break;
+            case SYM_TYPE::CONST_CHAR:
+                os << "CONST_CHAR = '" << std::get<char>(sym->value) << "'";
+                break;
+            case SYM_TYPE::TEXT:
+                os << "TEXT @L" << sym->label;
+                break;
+            default:
+                os << "UNKNOWN";
+        }
+        os << std::endl;
+    }
+    //sym_tab_local不会打印，因为离开函数作用域后局部符号表会被清空
+    os << std::endl;
 }

@@ -32,7 +32,8 @@
 %type <std::shared_ptr<TAC>> expr_stmt if_stmt while_stmt for_stmt input_stmt output_stmt return_stmt
 %type <std::shared_ptr<TAC>> param_list param_decl_list param_decl
 %type <std::shared_ptr<EXP>> expression const_expr func_call_expr assign_expr arg_list arg_list_nonempty
-%type <std::shared_ptr<SYM>> func_header type_spec
+%type <std::shared_ptr<SYM>> func_header
+%type <DATA_TYPE> type_spec
 
 %right '='
 %right UMINUS
@@ -45,8 +46,7 @@
 program: func_decl_list
 {
     tac_gen.complete();
-    tac_gen.print_tac();
-    std::exit(0);
+    std::clog << "Parsing completed successfully." << std::endl;
 }
 ;
 
@@ -72,15 +72,18 @@ func_decl: function
 
 type_spec: INT
 {
-    $$ = nullptr;
+    tac_gen.set_current_type(DATA_TYPE::INT);
+    $$ = DATA_TYPE::INT;
 }
 | CHAR
 {
-    $$ = nullptr;
+    tac_gen.set_current_type(DATA_TYPE::CHAR);
+    $$ = DATA_TYPE::CHAR;
 }
 | VOID
 {
-    $$ = nullptr;
+    tac_gen.set_current_type(DATA_TYPE::VOID);
+    $$ = DATA_TYPE::VOID;
 }
 ;
 
@@ -92,11 +95,11 @@ decl: type_spec decl_list EOL
 
 decl_list: IDENTIFIER
 {
-    $$ = tac_gen.declare_var($1);
+    $$ = tac_gen.declare_var($1, tac_gen.get_current_type());
 }
 | decl_list ',' IDENTIFIER
 {
-    $$ = tac_gen.join_tac($1, tac_gen.declare_var($3));
+    $$ = tac_gen.join_tac($1, tac_gen.declare_var($3, tac_gen.get_current_type()));
 }
 ;
 
@@ -109,7 +112,7 @@ function: func_header '(' param_list ')' block
 
 func_header: type_spec IDENTIFIER
 {
-    $$ = tac_gen.declare_func($2);
+    $$ = tac_gen.declare_func($2, $1);
     tac_gen.enter_scope();
 }
 ;
@@ -136,7 +139,7 @@ param_decl_list: param_decl
 
 param_decl: type_spec IDENTIFIER
 {
-    $$ = tac_gen.declare_para($2);
+    $$ = tac_gen.declare_para($2, $1);
 }
 ;
 
@@ -243,15 +246,24 @@ return_stmt: RETURN expression
 
 const_expr: INTEGER
 {
-    $$ = tac_gen.mk_exp(tac_gen.mk_const($1), nullptr);
+    auto sym = tac_gen.mk_const($1);
+    auto exp = tac_gen.mk_exp(sym, nullptr);
+    exp->data_type = DATA_TYPE::INT;
+    $$ = exp;
 }
 | CHARACTER
 {
-    $$ = tac_gen.mk_exp(tac_gen.mk_const_char($1), nullptr);
+    auto sym = tac_gen.mk_const_char($1);
+    auto exp = tac_gen.mk_exp(sym, nullptr);
+    exp->data_type = DATA_TYPE::CHAR;
+    $$ = exp;
 }
 | TEXT
 {
-    $$ = tac_gen.mk_exp(tac_gen.mk_text($1), nullptr);
+    auto sym = tac_gen.mk_text($1);
+    auto exp = tac_gen.mk_exp(sym, nullptr);
+    exp->data_type = DATA_TYPE::CHAR;  // String is array of char
+    $$ = exp;
 }
 ;
 
@@ -283,7 +295,12 @@ expression: const_expr
 }
 | IDENTIFIER
 {
-    $$ = tac_gen.mk_exp(tac_gen.get_var($1), nullptr);
+    auto var = tac_gen.get_var($1);
+    auto exp = tac_gen.mk_exp(var, nullptr);
+    if (var) {
+        exp->data_type = var->data_type;
+    }
+    $$ = exp;
 }
 | expression '+' expression
 {

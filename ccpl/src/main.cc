@@ -2,8 +2,6 @@
 #include "tac.hh"
 #include <iostream>
 
-extern yy::parser::symbol_type yylex();
-
 int main(int argc, char* argv[]) {
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
@@ -26,6 +24,10 @@ int main(int argc, char* argv[]) {
         yy::parser parser;
         int result = parser.parse();
         fclose(input_file);
+
+        tac_gen.print_symbol_table();
+        tac_gen.print_tac();
+
         return result;
     } catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
