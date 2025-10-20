@@ -1,12 +1,13 @@
 #include "opt.hh"
+#include "global.hh"
 #include <unordered_map>
 #include <unordered_set>
+using namespace twlm::ccpl::modules;
 
 static void warning(const std::string& module,const std::string& msg) {
     std::cerr << "AST Opt[" << module << "] Warning: " << msg << std::endl;
 }
 
-// 获取符号的常量值（如果是常量）
 static bool get_const_value(std::shared_ptr<SYM> sym, int& value) {
     if (!sym) return false;
     if (sym->type == SYM_TYPE::CONST_INT) {
@@ -16,7 +17,6 @@ static bool get_const_value(std::shared_ptr<SYM> sym, int& value) {
     return false;
 }
 
-// 创建常量符号
 static std::shared_ptr<SYM> make_const(int value) {
     auto const_sym = std::make_shared<SYM>();
     const_sym->type = SYM_TYPE::CONST_INT;
@@ -31,7 +31,7 @@ bool constant_folding(std::shared_ptr<TAC> tac) {
     auto current = tac;
     
     while (current != nullptr) {
-        // 处理二元运算
+        // 二元运算
         if (current->op == TAC_OP::ADD || current->op == TAC_OP::SUB ||
             current->op == TAC_OP::MUL || current->op == TAC_OP::DIV) {
             
@@ -41,8 +41,7 @@ bool constant_folding(std::shared_ptr<TAC> tac) {
                 
                 int result = 0;
                 bool valid = true;
-                
-                // 执行常量折叠
+
                 switch (current->op) {
                     case TAC_OP::ADD:
                         result = val_b + val_c;
@@ -75,7 +74,7 @@ bool constant_folding(std::shared_ptr<TAC> tac) {
                 }
             }
         }
-        // 处理比较运算
+        // 比较运算
         else if (current->op == TAC_OP::EQ || current->op == TAC_OP::NE ||
                  current->op == TAC_OP::LT || current->op == TAC_OP::LE ||
                  current->op == TAC_OP::GT || current->op == TAC_OP::GE) {
@@ -135,8 +134,6 @@ bool constant_folding(std::shared_ptr<TAC> tac) {
 //常量传播：将已知常量值传播到使用处
 bool constant_propagation(std::shared_ptr<TAC> tac) {
     bool changed = false;
-    
-    // 建立变量到常量值的映射表
     std::unordered_map<std::shared_ptr<SYM>, int> const_map;
     
     auto current = tac;
@@ -174,11 +171,10 @@ bool constant_propagation(std::shared_ptr<TAC> tac) {
             }
         }
         
-        // 如果是 COPY 指令，且右值是常量，记录左值为常量
+        // 如果是 COPY CONST，记录左值为常量
         if (current->op == TAC_OP::COPY && current->a && current->b) {
             int val;
             if (get_const_value(current->b, val)) {
-                // 只传播临时变量和普通变量
                 if (current->a->type == SYM_TYPE::VAR) {
                     const_map[current->a] = val;
                 }

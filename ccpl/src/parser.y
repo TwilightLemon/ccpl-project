@@ -7,17 +7,19 @@
 %code requires {
     #include <string>
     #include <memory>
-    #include "tac.hh"
+    #include "global.hh"
+    using namespace twlm::ccpl::abstraction;
 }
 
 %code {
     #include <iostream>
     #include <cstdlib>
-    #include "tac.hh"
+    #include "global.hh"
     
     yy::parser::symbol_type yylex();
     extern int yylineno;
 }
+/*TODO: struct支持*/
 
 %token EOL
 %token INT CHAR VOID

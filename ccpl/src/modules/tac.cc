@@ -2,8 +2,7 @@
 #include <sstream>
 #include <iomanip>
 
-// Global TAC generator instance
-TACGenerator tac_gen;
+using namespace twlm::ccpl::modules;
 
 TACGenerator::TACGenerator() 
     : scope(SYM_SCOPE::GLOBAL), next_tmp(0), next_label(1), 
