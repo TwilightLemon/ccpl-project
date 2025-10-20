@@ -33,7 +33,7 @@
 
 "for"  {  return yy::parser::make_FOR();  }
 
-[A-Za-z]([A-Za-z]|[0-9])*  {  
+[_A-Za-z]([_A-Za-z]|[0-9])*  {  
 	return yy::parser::make_IDENTIFIER(std::string(yytext));
 }
 

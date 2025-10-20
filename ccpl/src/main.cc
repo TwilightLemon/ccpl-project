@@ -1,5 +1,7 @@
 #include "parser.tab.hh"
+#include "tac.hh"
 #include <iostream>
+
 extern yy::parser::symbol_type yylex();
 
 int main(int argc, char* argv[]) {
@@ -16,6 +18,9 @@ int main(int argc, char* argv[]) {
     
     extern FILE* yyin;
     yyin = input_file;
+    
+    // Initialize TAC generator
+    tac_gen.init();
     
     try {
         yy::parser parser;
