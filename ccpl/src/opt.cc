@@ -2,6 +2,10 @@
 #include <unordered_map>
 #include <unordered_set>
 
+static void warning(const std::string& module,const std::string& msg) {
+    std::cerr << "AST Opt[" << module << "] Warning: " << msg << std::endl;
+}
+
 // 获取符号的常量值（如果是常量）
 static bool get_const_value(std::shared_ptr<SYM> sym, int& value) {
     if (!sym) return false;
@@ -53,7 +57,8 @@ bool constant_folding(std::shared_ptr<TAC> tac) {
                         if (val_c != 0) {
                             result = val_b / val_c;
                         } else {
-                            valid = false; // 除零错误，不优化
+                            valid = false; // 除零错误，丢给虚拟机玩吧
+                            warning("Constant Folding","Division by zero!!!");
                         }
                         break;
                     default:
@@ -136,6 +141,39 @@ bool constant_propagation(std::shared_ptr<TAC> tac) {
     
     auto current = tac;
     while (current != nullptr) {
+        // 先替换使用处的变量为常量（在记录新定义之前）
+        // 替换 b 操作数
+        if (current->b && current->b->type == SYM_TYPE::VAR) {
+            auto it = const_map.find(current->b);
+            if (it != const_map.end()) {
+                current->b = make_const(it->second);
+                changed = true;
+            }
+        }
+        
+        // 替换 c 操作数
+        if (current->c && current->c->type == SYM_TYPE::VAR) {
+            auto it = const_map.find(current->c);
+            if (it != const_map.end()) {
+                current->c = make_const(it->second);
+                changed = true;
+            }
+        }
+        
+        // 对于 RETURN、OUTPUT、IFZ、ACTUAL 等指令，替换 a 操作数
+        if (current->op == TAC_OP::RETURN || 
+            current->op == TAC_OP::OUTPUT ||
+            current->op == TAC_OP::IFZ ||
+            current->op == TAC_OP::ACTUAL) {
+            if (current->a && current->a->type == SYM_TYPE::VAR) {
+                auto it = const_map.find(current->a);
+                if (it != const_map.end()) {
+                    current->a = make_const(it->second);
+                    changed = true;
+                }
+            }
+        }
+        
         // 如果是 COPY 指令，且右值是常量，记录左值为常量
         if (current->op == TAC_OP::COPY && current->a && current->b) {
             int val;
@@ -150,25 +188,15 @@ bool constant_propagation(std::shared_ptr<TAC> tac) {
             }
         }
         // 如果变量被重新赋值（作为目标），清除其常量信息
-        else if (current->a) {
+        else if (current->a && 
+                 (current->op == TAC_OP::ADD || current->op == TAC_OP::SUB ||
+                  current->op == TAC_OP::MUL || current->op == TAC_OP::DIV ||
+                  current->op == TAC_OP::NEG ||
+                  current->op == TAC_OP::EQ || current->op == TAC_OP::NE ||
+                  current->op == TAC_OP::LT || current->op == TAC_OP::LE ||
+                  current->op == TAC_OP::GT || current->op == TAC_OP::GE ||
+                  current->op == TAC_OP::CALL || current->op == TAC_OP::INPUT)) {
             const_map.erase(current->a);
-        }
-        
-        // 替换使用处的变量为常量
-        if (current->b && current->b->type == SYM_TYPE::VAR) {
-            auto it = const_map.find(current->b);
-            if (it != const_map.end()) {
-                current->b = make_const(it->second);
-                changed = true;
-            }
-        }
-        
-        if (current->c && current->c->type == SYM_TYPE::VAR) {
-            auto it = const_map.find(current->c);
-            if (it != const_map.end()) {
-                current->c = make_const(it->second);
-                changed = true;
-            }
         }
         
         current = current->next;
@@ -291,8 +319,8 @@ void TACOptimizer::optimize() {
     const int MAX_ITERATIONS = 10; // 防止无限循环
     
     while (changed && iteration < MAX_ITERATIONS) {
-        std::cout << "Optimization Iteration: " << iteration + 1 << std::endl;
-        tac_gen.print_tac();
+        std::clog << "Optimization Iteration: " << iteration + 1 << std::endl;
+        tac_gen.print_tac(std::clog);
 
         changed = false;
         iteration++;
@@ -316,5 +344,6 @@ void TACOptimizer::optimize() {
         if (dead_code_elimination(tac_first)) {
             changed = true;
         }
+        std::clog <<std::endl;
     }
 }
