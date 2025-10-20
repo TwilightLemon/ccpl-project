@@ -29,7 +29,9 @@ int main(int argc, char *argv[])
         int result = parser.parse();
         fclose(input_file);
 
-        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
+        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first(),[&](std::ostream &os) {
+            tac_gen.print_tac(os);
+        });
         opt.optimize();
 
         tac_gen.print_symbol_table();

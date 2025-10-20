@@ -1,5 +1,4 @@
 #include "opt.hh"
-#include "global.hh"
 #include <unordered_map>
 #include <unordered_set>
 using namespace twlm::ccpl::modules;
@@ -316,7 +315,7 @@ void TACOptimizer::optimize() {
     
     while (changed && iteration < MAX_ITERATIONS) {
         std::clog << "Optimization Iteration: " << iteration + 1 << std::endl;
-        tac_gen.print_tac(std::clog);
+        print_tac(std::clog);
 
         changed = false;
         iteration++;
