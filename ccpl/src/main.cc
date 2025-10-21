@@ -28,13 +28,17 @@ int main(int argc, char *argv[])
         yy::parser parser;
         int result = parser.parse();
         fclose(input_file);
+        tac_gen.print_symbol_table();
 
-        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first(),[&](std::ostream &os) {
-            tac_gen.print_tac(os);
-        });
+        //先log一个原始结果：
+        std::clog << "=== Original TAC ===" << std::endl;
+        tac_gen.print_tac(std::clog);
+        std::clog << std::endl;
+
+        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
         opt.optimize();
 
-        tac_gen.print_symbol_table();
+        //写入标准输出的是最终结果
         tac_gen.print_tac();
 
         return result;
