@@ -2,31 +2,30 @@
 #include <string>
 #include <variant>
 #include <memory>
-#include <functional>
 #include <vector>
 #include "abstraction/block_struct.hh"
 
 namespace twlm::ccpl::modules
 {
     using namespace twlm::ccpl::abstraction;
-    
-    class TACOptimizer
+    using BlockList = std::vector<std::shared_ptr<BasicBlock>>;
+    class BlockBuilder
     {
     private:
         std::shared_ptr<TAC> tac_first;
-        std::function<void(std::ostream &os)> print_tac;
-        std::vector<std::shared_ptr<BasicBlock>> basic_blocks;
+        BlockList basic_blocks;
         
-        // 基础块构建相关函数
+
         void build_basic_blocks();
-        void build_cfg();  // 构建控制流图
+        void build_cfg();
         bool is_leader(std::shared_ptr<TAC> tac, std::shared_ptr<TAC> prev);
         std::shared_ptr<BasicBlock> find_block_by_label(std::shared_ptr<SYM> label);
 
     public:
-        TACOptimizer(std::shared_ptr<TAC> first, std::function<void(std::ostream &os)> print_func)
-            : tac_first(first), print_tac(print_func) {}
-        void optimize();
+        BlockBuilder(std::shared_ptr<TAC> first)
+            : tac_first(first) {}
+        void build();
+        BlockList get_basic_blocks() const { return basic_blocks; }
         void print_basic_blocks(std::ostream &os = std::cout);
     };
 }

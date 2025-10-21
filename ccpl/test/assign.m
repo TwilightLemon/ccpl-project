@@ -8,6 +8,10 @@ char func(int a,char b){
 	return '?';
 }
 
+void func2(int b){
+
+}
+
 int main()
 {
 	int a,b,c,d;
