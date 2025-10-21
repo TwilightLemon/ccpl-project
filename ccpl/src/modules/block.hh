@@ -24,7 +24,10 @@ namespace twlm::ccpl::modules
     public:
         BlockBuilder(std::shared_ptr<TAC> first)
             : tac_first(first) {}
-        void build();
+        void build(){
+            build_basic_blocks();
+            build_cfg();
+        }
         BlockList get_basic_blocks() const { return basic_blocks; }
         void print_basic_blocks(std::ostream &os = std::cout);
     };

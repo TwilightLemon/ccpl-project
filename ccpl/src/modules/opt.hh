@@ -5,6 +5,7 @@
 #include <functional>
 #include <vector>
 #include "abstraction/block_struct.hh"
+#include "block.hh"
 
 namespace twlm::ccpl::modules
 {
@@ -15,18 +16,10 @@ namespace twlm::ccpl::modules
     private:
         std::shared_ptr<TAC> tac_first;
         std::function<void(std::ostream &os)> print_tac;
-        std::vector<std::shared_ptr<BasicBlock>> basic_blocks;
-        
-        // 基础块构建相关函数
-        void build_basic_blocks();
-        void build_cfg();  // 构建控制流图
-        bool is_leader(std::shared_ptr<TAC> tac, std::shared_ptr<TAC> prev);
-        std::shared_ptr<BasicBlock> find_block_by_label(std::shared_ptr<SYM> label);
-
+        BlockBuilder block_builder;
     public:
         TACOptimizer(std::shared_ptr<TAC> first, std::function<void(std::ostream &os)> print_func)
-            : tac_first(first), print_tac(print_func) {}
+            : tac_first(first), print_tac(print_func), block_builder(first) {}
         void optimize();
-        void print_basic_blocks(std::ostream &os = std::cout);
     };
 }

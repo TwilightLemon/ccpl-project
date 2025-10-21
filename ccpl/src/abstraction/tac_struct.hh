@@ -5,6 +5,7 @@
 #include <vector>
 #include <unordered_map>
 #include <iostream>
+#include <sstream>
 #include "tac_definitions.hh"
 
 namespace twlm::ccpl::abstraction
@@ -27,6 +28,41 @@ namespace twlm::ccpl::abstraction
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
                 return_type(DATA_TYPE::UNDEF) {}
+
+        std::string to_string() const
+        {
+            switch (type)
+            {
+            case SYM_TYPE::VAR:
+            case SYM_TYPE::FUNC:
+            case SYM_TYPE::LABEL:
+                return name;
+
+            case SYM_TYPE::TEXT:
+            {
+                std::ostringstream oss;
+                oss << "L" << label;
+                return oss.str();
+            }
+
+            case SYM_TYPE::CONST_INT:
+                if (std::holds_alternative<int>(value))
+                {
+                    return std::to_string(std::get<int>(value));
+                }
+                return name;
+
+            case SYM_TYPE::CONST_CHAR:
+                if (std::holds_alternative<char>(value))
+                {
+                    return "'" + std::string(1, std::get<char>(value)) + "'";
+                }
+                return name;
+
+            default:
+                return "?";
+            }
+        }
     };
 
     // TAC instruction structure
@@ -37,6 +73,110 @@ namespace twlm::ccpl::abstraction
         std::shared_ptr<TAC> prev, next;
 
         TAC(TAC_OP op = TAC_OP::UNDEF) : op(op), prev(nullptr), next(nullptr) {}
+
+        std::string to_string() const
+        {
+            std::ostringstream oss;
+
+            switch (op)
+            {
+            case TAC_OP::ADD:
+                oss << a->to_string() << " = " << b->to_string() << " + " << c->to_string();
+                break;
+            case TAC_OP::SUB:
+                oss << a->to_string() << " = " << b->to_string() << " - " << c->to_string();
+                break;
+            case TAC_OP::MUL:
+                oss << a->to_string() << " = " << b->to_string() << " * " << c->to_string();
+                break;
+            case TAC_OP::DIV:
+                oss << a->to_string() << " = " << b->to_string() << " / " << c->to_string();
+                break;
+            case TAC_OP::EQ:
+                oss << a->to_string() << " = (" << b->to_string() << " == " << c->to_string() << ")";
+                break;
+            case TAC_OP::NE:
+                oss << a->to_string() << " = (" << b->to_string() << " != " << c->to_string() << ")";
+                break;
+            case TAC_OP::LT:
+                oss << a->to_string() << " = (" << b->to_string() << " < " << c->to_string() << ")";
+                break;
+            case TAC_OP::LE:
+                oss << a->to_string() << " = (" << b->to_string() << " <= " << c->to_string() << ")";
+                break;
+            case TAC_OP::GT:
+                oss << a->to_string() << " = (" << b->to_string() << " > " << c->to_string() << ")";
+                break;
+            case TAC_OP::GE:
+                oss << a->to_string() << " = (" << b->to_string() << " >= " << c->to_string() << ")";
+                break;
+            case TAC_OP::NEG:
+                oss << a->to_string() << " = -" << b->to_string();
+                break;
+            case TAC_OP::COPY:
+                oss << a->to_string() << " = " << b->to_string();
+                break;
+            case TAC_OP::GOTO:
+                oss << "goto " << a->to_string();
+                break;
+            case TAC_OP::IFZ:
+                oss << "ifz " << b->to_string() << " goto " << a->to_string();
+                break;
+            case TAC_OP::LABEL:
+                oss << "label " << a->to_string();
+                break;
+            case TAC_OP::VAR:
+                oss << "var " << a->to_string();
+                if (a->data_type != DATA_TYPE::UNDEF)
+                {
+                    oss << " : " << data_type_to_string(a->data_type);
+                }
+                break;
+            case TAC_OP::FORMAL:
+                oss << "formal " << a->to_string();
+                break;
+            case TAC_OP::ACTUAL:
+                oss << "actual " << a->to_string();
+                break;
+            case TAC_OP::CALL:
+                if (a != nullptr)
+                {
+                    oss << a->to_string() << " = call " << b->to_string();
+                }
+                else
+                {
+                    oss << "call " << b->to_string();
+                }
+                break;
+            case TAC_OP::RETURN:
+                if (a != nullptr)
+                {
+                    oss << "return " << a->to_string();
+                }
+                else
+                {
+                    oss << "return";
+                }
+                break;
+            case TAC_OP::INPUT:
+                oss << "input " << a->to_string();
+                break;
+            case TAC_OP::OUTPUT:
+                oss << "output " << a->to_string();
+                break;
+            case TAC_OP::BEGINFUNC:
+                oss << "begin";
+                break;
+            case TAC_OP::ENDFUNC:
+                oss << "end";
+                break;
+            default:
+                oss << "undef";
+                break;
+            }
+
+            return oss.str();
+        }
     };
 
     // Expression structure

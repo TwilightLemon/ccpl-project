@@ -540,141 +540,12 @@ void TACGenerator::leave_scope() {
     sym_tab_local.clear();
 }
 
-std::string TACGenerator::sym_to_string(std::shared_ptr<SYM> s) {
-    if (s == nullptr) return "NULL";
-    
-    switch (s->type) {
-        case SYM_TYPE::VAR:
-        case SYM_TYPE::FUNC:
-        case SYM_TYPE::LABEL:
-            return s->name;
-            
-        case SYM_TYPE::TEXT: {
-            std::ostringstream oss;
-            oss << "L" << s->label;
-            return oss.str();
-        }
-        
-        case SYM_TYPE::CONST_INT:
-            if (std::holds_alternative<int>(s->value)) {
-                return std::to_string(std::get<int>(s->value));
-            }
-            return s->name;
-            
-        case SYM_TYPE::CONST_CHAR:
-            if (std::holds_alternative<char>(s->value)) {
-                return "'" + std::string(1, std::get<char>(s->value)) + "'";
-            }
-            return s->name;
-            
-        default:
-            return "?";
-    }
-}
-
-std::string TACGenerator::tac_to_string(std::shared_ptr<TAC> t) {
-    if (t == nullptr) return "";
-    
-    std::ostringstream oss;
-    
-    switch (t->op) {
-        case TAC_OP::ADD:
-            oss << sym_to_string(t->a) << " = " << sym_to_string(t->b) << " + " << sym_to_string(t->c);
-            break;
-        case TAC_OP::SUB:
-            oss << sym_to_string(t->a) << " = " << sym_to_string(t->b) << " - " << sym_to_string(t->c);
-            break;
-        case TAC_OP::MUL:
-            oss << sym_to_string(t->a) << " = " << sym_to_string(t->b) << " * " << sym_to_string(t->c);
-            break;
-        case TAC_OP::DIV:
-            oss << sym_to_string(t->a) << " = " << sym_to_string(t->b) << " / " << sym_to_string(t->c);
-            break;
-        case TAC_OP::EQ:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " == " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::NE:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " != " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::LT:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " < " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::LE:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " <= " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::GT:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " > " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::GE:
-            oss << sym_to_string(t->a) << " = (" << sym_to_string(t->b) << " >= " << sym_to_string(t->c) << ")";
-            break;
-        case TAC_OP::NEG:
-            oss << sym_to_string(t->a) << " = -" << sym_to_string(t->b);
-            break;
-        case TAC_OP::COPY:
-            oss << sym_to_string(t->a) << " = " << sym_to_string(t->b);
-            break;
-        case TAC_OP::GOTO:
-            oss << "goto " << sym_to_string(t->a);
-            break;
-        case TAC_OP::IFZ:
-            oss << "ifz " << sym_to_string(t->b) << " goto " << sym_to_string(t->a);
-            break;
-        case TAC_OP::LABEL:
-            oss << "label " << sym_to_string(t->a);
-            break;
-        case TAC_OP::VAR:
-            oss << "var " << sym_to_string(t->a);
-            if(t->a->data_type != DATA_TYPE::UNDEF) {
-                oss << " : " << data_type_to_string(t->a->data_type);
-            }
-            break;
-        case TAC_OP::FORMAL:
-            oss << "formal " << sym_to_string(t->a);
-            break;
-        case TAC_OP::ACTUAL:
-            oss << "actual " << sym_to_string(t->a);
-            break;
-        case TAC_OP::CALL:
-            if (t->a != nullptr) {
-                oss << sym_to_string(t->a) << " = call " << sym_to_string(t->b);
-            } else {
-                oss << "call " << sym_to_string(t->b);
-            }
-            break;
-        case TAC_OP::RETURN:
-            if (t->a != nullptr) {
-                oss << "return " << sym_to_string(t->a);
-            } else {
-                oss << "return";
-            }
-            break;
-        case TAC_OP::INPUT:
-            oss << "input " << sym_to_string(t->a);
-            break;
-        case TAC_OP::OUTPUT:
-            oss << "output " << sym_to_string(t->a);
-            break;
-        case TAC_OP::BEGINFUNC:
-            oss << "begin";
-            break;
-        case TAC_OP::ENDFUNC:
-            oss << "end";
-            break;
-        default:
-            oss << "undef";
-            break;
-    }
-    
-    return oss.str();
-}
-
 void TACGenerator::print_tac(std::ostream& os) {
     auto cur = tac_first;
     int line = 1;
     
     while (cur != nullptr) {
-        os << tac_to_string(cur) << std::endl;
+        os << cur->to_string() << std::endl;
         cur = cur->next;
     }
 }
@@ -728,16 +599,6 @@ void TACGenerator::check_return_type(std::shared_ptr<EXP> exp) {
         warning("Return type mismatch: expected " + 
                 data_type_to_string(current_func->return_type) + 
                 ", got " + data_type_to_string(exp->data_type));
-    }
-}
-
-std::string TACGenerator::data_type_to_string(DATA_TYPE type) {
-    switch (type) {
-        case DATA_TYPE::VOID: return "void";
-        case DATA_TYPE::INT: return "int";
-        case DATA_TYPE::CHAR: return "char";
-        case DATA_TYPE::UNDEF: return "undefined";
-        default: return "unknown";
     }
 }
 

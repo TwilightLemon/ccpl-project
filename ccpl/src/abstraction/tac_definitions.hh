@@ -11,6 +11,23 @@ namespace twlm::ccpl::abstraction
         UNDEF
     };
 
+    static std::string data_type_to_string(DATA_TYPE type)
+    {
+        switch (type)
+        {
+        case DATA_TYPE::VOID:
+            return "void";
+        case DATA_TYPE::INT:
+            return "int";
+        case DATA_TYPE::CHAR:
+            return "char";
+        case DATA_TYPE::UNDEF:
+            return "undefined";
+        default:
+            return "unknown";
+        }
+    }
+
     // Symbol Types
     enum class SYM_TYPE
     {

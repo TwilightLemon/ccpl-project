@@ -43,7 +43,8 @@
                 "${workspaceFolder}/ccpl/build/lex.yy.cc",
                 "${workspaceFolder}/ccpl/src/main.cc",
                 "${workspaceFolder}/ccpl/src/modules/tac.cc",
-                "${workspaceFolder}/ccpl/src/modules/opt.cc"
+                "${workspaceFolder}/ccpl/src/modules/opt.cc",
+                "${workspaceFolder}/ccpl/src/modules/block.cc"
             ],
             "problemMatcher": ["$gcc"],
             "group": {

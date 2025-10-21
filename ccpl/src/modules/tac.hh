@@ -99,9 +99,6 @@ namespace twlm::ccpl::modules
         // Output
         void print_tac(std::ostream &os = std::cout);
         void print_symbol_table(std::ostream &os = std::cout);
-        std::string sym_to_string(std::shared_ptr<SYM> s);
-        std::string tac_to_string(std::shared_ptr<TAC> t);
-        std::string data_type_to_string(DATA_TYPE type);
 
         // Error handling
         void error(const std::string &msg);
