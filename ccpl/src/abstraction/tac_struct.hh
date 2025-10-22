@@ -191,4 +191,10 @@ namespace twlm::ccpl::abstraction
                 data_type(DATA_TYPE::UNDEF), next(nullptr) {}
     };
 
+    // Loop context for break/continue
+    struct LoopContext {
+        std::shared_ptr<SYM> break_label;    // Label to jump to on break
+        std::shared_ptr<SYM> continue_label; // Label to jump to on continue
+        std::shared_ptr<SYM> loop_start_label; // Label for the start of the loop (for 'for' loops)
+    };
 }

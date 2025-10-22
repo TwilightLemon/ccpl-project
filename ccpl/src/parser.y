@@ -25,13 +25,15 @@
 %token INT CHAR VOID
 %token EQ NE LT LE GT GE UMINUS
 %token IF ELSE FOR WHILE INPUT OUTPUT RETURN
+%token BREAK CONTINUE
 
 %token <std::string> IDENTIFIER TEXT
 %token <int> INTEGER
 %token <char> CHARACTER
 
 %type <std::shared_ptr<TAC>> func_decl_list func_decl function decl decl_list block stmt_list statement
-%type <std::shared_ptr<TAC>> expr_stmt if_stmt while_stmt for_stmt input_stmt output_stmt return_stmt
+%type <std::shared_ptr<TAC>> expr_stmt if_stmt input_stmt output_stmt return_stmt
+%type <std::shared_ptr<TAC>> while_stmt for_stmt
 %type <std::shared_ptr<TAC>> param_list param_decl_list param_decl
 %type <std::shared_ptr<EXP>> expression const_expr func_call_expr assign_expr arg_list arg_list_nonempty
 %type <std::shared_ptr<SYM>> func_header
@@ -193,6 +195,14 @@ statement: decl
 {
     $$ = $1;
 }
+| BREAK EOL
+{
+    $$ = tac_gen.do_break();
+}
+| CONTINUE EOL
+{
+    $$ = tac_gen.do_continue();
+}
 ;
 
 expr_stmt: expression
@@ -211,15 +221,23 @@ if_stmt: IF '(' expression ')' block
 }
 ;
 
-while_stmt: WHILE '(' expression ')' block
+while_stmt: WHILE 
 {
-    $$ = tac_gen.do_while($3, $5);
+    tac_gen.begin_while_loop();
+}
+'(' expression ')' block
+{
+    $$ = tac_gen.end_while_loop($4, $6);
 }
 ;
 
-for_stmt: FOR '(' expr_stmt EOL expression EOL expr_stmt ')' block
+for_stmt: FOR
 {
-    $$ = tac_gen.do_for($3, $5, $7, $9);
+    tac_gen.begin_for_loop();
+}
+'(' expr_stmt EOL expression EOL expr_stmt ')' block
+{
+    $$ = tac_gen.end_for_loop($4, $6, $8, $10);
 }
 ;
 

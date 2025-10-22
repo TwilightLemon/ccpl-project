@@ -10,6 +10,7 @@
 namespace twlm::ccpl::modules
 {
     using namespace twlm::ccpl::abstraction;
+    
     class TACGenerator
     {
     private:
@@ -25,6 +26,9 @@ namespace twlm::ccpl::modules
 
         std::shared_ptr<TAC> tac_first;
         std::shared_ptr<TAC> tac_last;
+        
+        // Loop context stack for break/continue
+        std::vector<LoopContext> loop_stack;
 
     public:
         TACGenerator();
@@ -76,7 +80,19 @@ namespace twlm::ccpl::modules
                                     std::shared_ptr<EXP> cond,
                                     std::shared_ptr<TAC> update,
                                     std::shared_ptr<TAC> body);
+        
+        // Prepare loop context before parsing loop body
+        void begin_while_loop();
+        void begin_for_loop();
+        std::shared_ptr<TAC> end_while_loop(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> stmt);
+        std::shared_ptr<TAC> end_for_loop(std::shared_ptr<TAC> init,
+                                          std::shared_ptr<EXP> cond,
+                                          std::shared_ptr<TAC> update,
+                                          std::shared_ptr<TAC> body);
+        
         std::shared_ptr<TAC> do_call(const std::string &name, std::shared_ptr<EXP> arglist);
+        std::shared_ptr<TAC> do_break();
+        std::shared_ptr<TAC> do_continue();
 
         // Expression operations
         std::shared_ptr<EXP> mk_exp(std::shared_ptr<SYM> place,
@@ -89,6 +105,11 @@ namespace twlm::ccpl::modules
         // Scope management
         void enter_scope();
         void leave_scope();
+        
+        // Loop management for break/continue
+        void enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> continue_label, std::shared_ptr<SYM> loop_start_label=nullptr);
+        void leave_loop();
+        bool in_loop() const;
 
         // Type checking
         bool check_type_compatibility(DATA_TYPE t1, DATA_TYPE t2);

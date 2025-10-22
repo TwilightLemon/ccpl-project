@@ -358,13 +358,60 @@ std::shared_ptr<TAC> TACGenerator::do_if_else(std::shared_ptr<EXP> exp,
 }
 
 std::shared_ptr<TAC> TACGenerator::do_while(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> stmt) {
-    auto label_name = "L" + std::to_string(next_label++);
-    auto label = mk_tac(TAC_OP::LABEL, mk_label(label_name));
-    auto code = mk_tac(TAC_OP::GOTO, label->a);
+    // while (exp) stmt
+    // =>
+    // continue_label:
+    //   ifz exp goto break_label
+    //   stmt
+    //   goto continue_label
+    // break_label:
+    auto loop=loop_stack.back();
+
+    auto continue_label = mk_tac(TAC_OP::LABEL, loop.continue_label);
+    auto break_label = mk_tac(TAC_OP::LABEL, loop.break_label);
+
+    auto ifz = mk_tac(TAC_OP::IFZ, break_label->a, exp->place);
+    auto goto_continue = mk_tac(TAC_OP::GOTO, continue_label->a);
+
+    // Build: continue_label -> cond code -> ifz -> stmt -> goto -> break_label
+    auto result = continue_label;
+    result = join_tac(result, exp->code);
+    ifz->prev = result;
+    result = join_tac(ifz, stmt);
+    goto_continue->prev = result;
+    break_label->prev = goto_continue;
     
-    code->prev = stmt;
+    return break_label;
+}
+
+void TACGenerator::begin_while_loop() {
+    auto continue_label_name = "L" + std::to_string(next_label++);
+    auto break_label_name = "L" + std::to_string(next_label++);
     
-    return join_tac(label, do_if(exp, code));
+    enter_loop(mk_label(break_label_name), mk_label(continue_label_name));
+}
+
+std::shared_ptr<TAC> TACGenerator::end_while_loop(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> stmt) {
+    auto result = do_while(exp, stmt);
+    leave_loop();
+    return result;
+}
+
+void TACGenerator::begin_for_loop() {
+    auto loop_start_name = "L" + std::to_string(next_label++);
+    auto continue_label_name = "L" + std::to_string(next_label++);
+    auto break_label_name = "L" + std::to_string(next_label++);
+    
+    enter_loop(mk_label(break_label_name), mk_label(continue_label_name), mk_label(loop_start_name));
+}
+
+std::shared_ptr<TAC> TACGenerator::end_for_loop(std::shared_ptr<TAC> init,
+                                                 std::shared_ptr<EXP> cond,
+                                                 std::shared_ptr<TAC> update,
+                                                 std::shared_ptr<TAC> body) {
+    auto result = do_for(init, cond, update, body);
+    leave_loop();
+    return result;
 }
 
 std::shared_ptr<TAC> TACGenerator::do_for(std::shared_ptr<TAC> init,
@@ -374,32 +421,36 @@ std::shared_ptr<TAC> TACGenerator::do_for(std::shared_ptr<TAC> init,
     // for (init; cond; update) body
     // =>
     // init
-    // label:
-    //   ifz cond goto end
+    // loop_start:
+    //   ifz cond goto break_label
     //   body
+    // continue_label:
     //   update
-    //   goto label
-    // end:
+    //   goto loop_start
+    // break_label:
+    auto loop=loop_stack.back();
+    auto loop_start_sym = loop.loop_start_label;
+    auto continue_label_sym = loop.continue_label;
+    auto break_label_sym = loop.break_label;
     
-    auto label_name = "L" + std::to_string(next_label++);
-    auto end_label_name = "L" + std::to_string(next_label++);
+    auto loop_start = mk_tac(TAC_OP::LABEL, loop_start_sym);
+    auto continue_label = mk_tac(TAC_OP::LABEL, continue_label_sym);
+    auto break_label = mk_tac(TAC_OP::LABEL, break_label_sym);
     
-    auto label = mk_tac(TAC_OP::LABEL, mk_label(label_name));
-    auto end_label = mk_tac(TAC_OP::LABEL, mk_label(end_label_name));
+    auto ifz = mk_tac(TAC_OP::IFZ, break_label_sym, cond->place);
+    auto goto_loop = mk_tac(TAC_OP::GOTO, loop_start_sym);
     
-    auto ifz = mk_tac(TAC_OP::IFZ, end_label->a, cond->place);
-    auto goto_label = mk_tac(TAC_OP::GOTO, label->a);
-    
-    // Build: init -> label -> cond code -> ifz -> body -> update -> goto -> end
-    auto result = join_tac(init, label);
+    // Build: init -> loop_start -> cond code -> ifz -> body -> continue_label -> update -> goto -> break_label
+    auto result = join_tac(init, loop_start);
     result = join_tac(result, cond->code);
     ifz->prev = result;
     result = join_tac(ifz, body);
-    result = join_tac(result, update);
-    goto_label->prev = result;
-    end_label->prev = goto_label;
+    continue_label->prev = result;
+    result = join_tac(continue_label, update);
+    goto_loop->prev = result;
+    break_label->prev = goto_loop;
     
-    return end_label;
+    return break_label;
 }
 
 std::shared_ptr<TAC> TACGenerator::do_call(const std::string& name, std::shared_ptr<EXP> arglist) {
@@ -538,6 +589,45 @@ void TACGenerator::enter_scope() {
 void TACGenerator::leave_scope() {
     scope = SYM_SCOPE::GLOBAL;
     sym_tab_local.clear();
+}
+
+void TACGenerator::enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> continue_label,
+                              std::shared_ptr<SYM> loop_start_label) {
+    LoopContext ctx;
+    ctx.break_label = break_label;
+    ctx.continue_label = continue_label;
+    ctx.loop_start_label = loop_start_label;
+    loop_stack.push_back(ctx);
+}
+
+void TACGenerator::leave_loop() {
+    if (!loop_stack.empty()) {
+        loop_stack.pop_back();
+    }
+}
+
+bool TACGenerator::in_loop() const {
+    return !loop_stack.empty();
+}
+
+std::shared_ptr<TAC> TACGenerator::do_break() {
+    if (!in_loop()) {
+        error("break statement outside of loop");
+        return nullptr;
+    }
+    
+    auto& ctx = loop_stack.back();
+    return mk_tac(TAC_OP::GOTO, ctx.break_label);
+}
+
+std::shared_ptr<TAC> TACGenerator::do_continue() {
+    if (!in_loop()) {
+        error("continue statement outside of loop");
+        return nullptr;
+    }
+    
+    auto& ctx = loop_stack.back();
+    return mk_tac(TAC_OP::GOTO, ctx.continue_label);
 }
 
 void TACGenerator::print_tac(std::ostream& os) {
