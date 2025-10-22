@@ -2,7 +2,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug CCPL - Custom File",
+            "name": "Debug CCPL with Test File",
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/ccpl/build/ccpl",
@@ -21,7 +21,7 @@
                     "ignoreFailures": true
                 }
             ],
-            "preLaunchTask": "Compile CCPL",
+            "preLaunchTask": "meson compile",
             "miDebuggerPath": "/usr/bin/gdb"
         }
     ],
@@ -29,7 +29,7 @@
         {
             "id": "testFile",
             "type": "promptString",
-            "description": "Enter the path to the test file (or use ${file} for current file)",
+            "description": "Enter test file path",
             "default": "${file}"
         }
     ]

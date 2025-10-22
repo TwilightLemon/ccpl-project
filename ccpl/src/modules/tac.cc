@@ -632,7 +632,6 @@ std::shared_ptr<TAC> TACGenerator::do_continue() {
 
 void TACGenerator::print_tac(std::ostream& os) {
     auto cur = tac_first;
-    int line = 1;
     
     while (cur != nullptr) {
         os << cur->to_string() << std::endl;
