@@ -37,6 +37,12 @@
 
 "continue" { return yy::parser::make_CONTINUE(); }
 
+"switch" { return yy::parser::make_SWITCH(); }
+
+"case"	{return yy::parser::make_CASE(); }
+
+"default" { return yy::parser::make_DEFAULT(); }
+
 [_A-Za-z]([_A-Za-z]|[0-9])*  {  
 	return yy::parser::make_IDENTIFIER(std::string(yytext));
 }

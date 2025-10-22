@@ -29,6 +29,7 @@ namespace twlm::ccpl::modules
         
         // Loop context stack for break/continue
         std::vector<LoopContext> loop_stack;
+        std::vector<SwitchContext> switch_stack;
 
     public:
         TACGenerator();
@@ -94,6 +95,11 @@ namespace twlm::ccpl::modules
         std::shared_ptr<TAC> do_break();
         std::shared_ptr<TAC> do_continue();
 
+        void begin_switch();
+        std::shared_ptr<TAC> end_switch(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> body);
+        std::shared_ptr<TAC> do_case(int value);
+        std::shared_ptr<TAC> do_default();
+
         // Expression operations
         std::shared_ptr<EXP> mk_exp(std::shared_ptr<SYM> place,
                                     std::shared_ptr<TAC> code,
@@ -110,6 +116,11 @@ namespace twlm::ccpl::modules
         void enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> continue_label, std::shared_ptr<SYM> loop_start_label=nullptr);
         void leave_loop();
         bool in_loop() const;
+
+        // Switch management
+        void enter_switch(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> default_label);
+        void leave_switch();
+        bool in_switch() const;
 
         // Type checking
         bool check_type_compatibility(DATA_TYPE t1, DATA_TYPE t2);

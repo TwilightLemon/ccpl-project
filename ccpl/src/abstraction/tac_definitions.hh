@@ -65,6 +65,7 @@ namespace twlm::ccpl::abstraction
         COPY,      // a = b
         GOTO,      // goto a
         IFZ,       // ifz b goto a
+        //IF,        // if b goto a
         BEGINFUNC, // function begin
         ENDFUNC,   // function end
         LABEL,     // label a

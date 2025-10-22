@@ -26,13 +26,14 @@
 %token EQ NE LT LE GT GE UMINUS
 %token IF ELSE FOR WHILE INPUT OUTPUT RETURN
 %token BREAK CONTINUE
+%token SWITCH CASE DEFAULT
 
 %token <std::string> IDENTIFIER TEXT
 %token <int> INTEGER
 %token <char> CHARACTER
 
 %type <std::shared_ptr<TAC>> func_decl_list func_decl function decl decl_list block stmt_list statement
-%type <std::shared_ptr<TAC>> expr_stmt if_stmt input_stmt output_stmt return_stmt
+%type <std::shared_ptr<TAC>> expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt
 %type <std::shared_ptr<TAC>> while_stmt for_stmt
 %type <std::shared_ptr<TAC>> param_list param_decl_list param_decl
 %type <std::shared_ptr<EXP>> expression const_expr func_call_expr assign_expr arg_list arg_list_nonempty
@@ -89,6 +90,19 @@ type_spec: INT
     tac_gen.set_current_type(DATA_TYPE::VOID);
     $$ = DATA_TYPE::VOID;
 }
+;
+
+declarator : pointer direct_declarator
+| direct_declarator
+;
+
+pointer:  '*'
+|'*' pointer
+;
+
+direct_declarator : IDENTIFIER
+| '(' declarator ')'
+| direct_declarator '[' INTEGER ']'
 ;
 
 decl: type_spec decl_list EOL
@@ -203,6 +217,16 @@ statement: decl
 {
     $$ = tac_gen.do_continue();
 }
+| switch_stmt
+{
+    $$ = $1;
+}
+| CASE INTEGER ':'{
+    $$ = tac_gen.do_case($2);
+}
+| DEFAULT ':'{
+    $$ = tac_gen.do_default();
+}
 ;
 
 expr_stmt: expression
@@ -238,6 +262,16 @@ for_stmt: FOR
 '(' expr_stmt EOL expression EOL expr_stmt ')' block
 {
     $$ = tac_gen.end_for_loop($4, $6, $8, $10);
+}
+;
+
+switch_stmt: SWITCH 
+{
+    tac_gen.begin_switch();
+}
+'(' expression ')'block
+{
+    $$ = tac_gen.end_switch($4, $6);
 }
 ;
 

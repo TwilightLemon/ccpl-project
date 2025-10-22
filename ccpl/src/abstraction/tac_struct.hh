@@ -10,6 +10,10 @@
 
 namespace twlm::ccpl::abstraction
 {
+    struct TYPE{
+        enum class BASETYPE{BASIC, POINTER, ARRAY, FUNCTION} basetype;
+    };
+
     // Symbol structure
     struct SYM
     {
@@ -24,6 +28,7 @@ namespace twlm::ccpl::abstraction
         // For functions
         std::vector<DATA_TYPE> param_types; // Parameter types
         DATA_TYPE return_type;              // Return type
+
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
@@ -196,5 +201,14 @@ namespace twlm::ccpl::abstraction
         std::shared_ptr<SYM> break_label;    // Label to jump to on break
         std::shared_ptr<SYM> continue_label; // Label to jump to on continue
         std::shared_ptr<SYM> loop_start_label; // Label for the start of the loop (for 'for' loops)
+    };
+
+    struct SwitchContext {
+        std::shared_ptr<SYM> break_label;    // Label to jump to on break
+        std::unordered_map<int, std::shared_ptr<SYM>> case_labels; // Map case values to labels
+        std::shared_ptr<SYM> default_label; // Label for default case
+
+        SwitchContext(std::shared_ptr<SYM> break_lbl, std::shared_ptr<SYM> default_lbl)
+            : break_label(break_lbl), default_label(default_lbl) {}
     };
 }

@@ -414,6 +414,84 @@ std::shared_ptr<TAC> TACGenerator::end_for_loop(std::shared_ptr<TAC> init,
     return result;
 }
 
+void TACGenerator::begin_switch() {
+    auto break_label_name = "L" + std::to_string(next_label++);
+    auto default_label_name = "L" + std::to_string(next_label++);
+    enter_switch(mk_label(break_label_name), mk_label(default_label_name));
+}
+
+
+void TACGenerator::leave_switch() {
+    if (in_switch()) {
+        switch_stack.pop_back();
+    } else {
+        error("Not in a switch context");
+    }
+}
+
+std::shared_ptr<TAC> TACGenerator::do_case(int value){
+    if(!in_switch()){
+        error("case statement outside of switch");
+        return nullptr;
+    }
+    auto& ctx = switch_stack.back();
+    auto case_label = mk_label("L" + std::to_string(next_label++));
+    ctx.case_labels[value] = case_label;
+    return mk_tac(TAC_OP::LABEL, case_label);
+}
+std::shared_ptr<TAC> TACGenerator::do_default(){
+    if(!in_switch()){
+        error("default statement outside of switch");
+        return nullptr;
+    }
+    auto& ctx = switch_stack.back();
+    return mk_tac(TAC_OP::LABEL, ctx.default_label);
+}
+
+std::shared_ptr<TAC> TACGenerator::end_switch(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> body) {
+    if (!in_switch()) {
+        error("Not in a switch context");
+        return nullptr;
+    }
+    
+    auto& ctx = switch_stack.back();
+    auto break_label_sym = ctx.break_label;
+    auto default_label_sym = ctx.default_label;
+    
+    auto switch_end = mk_tac(TAC_OP::LABEL, break_label_sym);
+    
+    // Generate CASE jumps
+    std::shared_ptr<TAC> case_jumps = nullptr;
+    for (const auto& [case_value, case_label] : ctx.case_labels) {
+        // 创建中间变量 tmp = exp - case_value
+        auto const_sym = mk_const(case_value);
+        auto temp = mk_tmp(exp->data_type);
+        auto temp_decl = mk_tac(TAC_OP::VAR, temp);
+        auto sub_tac = mk_tac(TAC_OP::SUB, temp, exp->place, const_sym);
+        
+        // 使用 IFZ 判断 tmp 是否为 0
+        auto case_jump = mk_tac(TAC_OP::IFZ, case_label, temp);
+        
+        // 连接代码：case_jumps -> temp_decl -> sub_tac -> case_jump
+        temp_decl->prev = case_jumps;
+        sub_tac->prev = temp_decl;
+        case_jump->prev = sub_tac;
+        case_jumps = case_jump;
+    }
+    
+    // Jump to default if no cases matched
+    auto goto_default = mk_tac(TAC_OP::GOTO, default_label_sym);
+    goto_default->prev = case_jumps;
+    case_jumps = goto_default;
+    
+    // Build final TAC: case_jumps -> body -> switch_end
+    auto result = join_tac(case_jumps, body);
+    switch_end->prev = result;
+    
+    leave_switch();
+    return switch_end;
+}
+
 std::shared_ptr<TAC> TACGenerator::do_for(std::shared_ptr<TAC> init,
                                            std::shared_ptr<EXP> cond,
                                            std::shared_ptr<TAC> update,
@@ -600,6 +678,10 @@ void TACGenerator::enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<
     loop_stack.push_back(ctx);
 }
 
+void TACGenerator::enter_switch(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> default_label) {
+    switch_stack.push_back({break_label, default_label});
+}
+
 void TACGenerator::leave_loop() {
     if (!loop_stack.empty()) {
         loop_stack.pop_back();
@@ -610,14 +692,22 @@ bool TACGenerator::in_loop() const {
     return !loop_stack.empty();
 }
 
+bool TACGenerator::in_switch() const {
+    return !switch_stack.empty();
+}
+
 std::shared_ptr<TAC> TACGenerator::do_break() {
-    if (!in_loop()) {
-        error("break statement outside of loop");
-        return nullptr;
+    if (in_loop()) {
+        auto& ctx = loop_stack.back();
+        return mk_tac(TAC_OP::GOTO, ctx.break_label);
     }
-    
-    auto& ctx = loop_stack.back();
-    return mk_tac(TAC_OP::GOTO, ctx.break_label);
+    if(in_switch()){
+        auto& ctx = switch_stack.back();
+        return mk_tac(TAC_OP::GOTO, ctx.break_label);
+    }
+
+    error("break statement outside of loop or switch");
+    return nullptr;
 }
 
 std::shared_ptr<TAC> TACGenerator::do_continue() {
