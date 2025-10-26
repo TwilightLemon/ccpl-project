@@ -26,7 +26,6 @@ int main(int argc, char *argv[])
 
     try
     {
-        // Step 1: Parse and build AST
         yy::parser parser;
         int result = parser.parse();
         fclose(input_file);
@@ -36,34 +35,25 @@ int main(int argc, char *argv[])
             return result;
         }
 
-        // Step 2: Get the AST
         auto program = ast_builder.get_program();
         
-        // Optional: Print AST for debugging
         std::clog << "=== AST ===" << std::endl;
         std::clog << program->to_string() << std::endl;
         std::clog << std::endl;
 
-        // Step 3: Generate TAC from AST
         twlm::ccpl::modules::ASTToTACGenerator tac_generator;
         tac_generator.generate(program);
         
         auto& tac_gen = tac_generator.get_tac_generator();
-        
-        // Print symbol table
         tac_gen.print_symbol_table();
 
-        // Log original TAC
         std::clog << "=== Original TAC ===" << std::endl;
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
-        // Step 4: Optimize TAC
-        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
-        opt.optimize();
-
-        // Step 5: Output final TAC to stdout
-        tac_gen.print_tac();
+        // twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
+        // opt.optimize();
+        // tac_gen.print_tac();
 
         return 0;
     }

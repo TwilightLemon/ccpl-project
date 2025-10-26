@@ -11,7 +11,6 @@ namespace twlm::ccpl::modules
 
     /**
      * AST to TAC Generator
-     * Traverses the AST and generates TAC (Three-Address Code)
      */
     class ASTToTACGenerator
     {

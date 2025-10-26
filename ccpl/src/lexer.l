@@ -52,7 +52,7 @@
 }
 
 \"[^\"]*\"  {
-	return yy::parser::make_TEXT(std::string(yytext));
+	return yy::parser::make_TEXT(std::string(yytext + 1, yytext + strlen(yytext) - 1));
 }
 
 \'[^']\'  {

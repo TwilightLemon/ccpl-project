@@ -33,13 +33,12 @@
 %token <char> CHARACTER
 
 %type <std::shared_ptr<Declaration>> func_decl
-%type <std::vector<std::shared_ptr<Declaration>>> func_decl_list
+%type <std::vector<std::shared_ptr<Declaration>>> decl_list
 
 %type <std::shared_ptr<Statement>> statement block expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt while_stmt for_stmt
 %type <std::vector<std::shared_ptr<Statement>>> stmt_list
 
-%type <std::shared_ptr<VarDecl>> var_decl
-%type <std::vector<std::shared_ptr<VarDecl>>> decl_list
+%type <std::vector<std::shared_ptr<VarDecl>>> var_decl_list
 
 %type <std::shared_ptr<ParamDecl>> param_decl
 %type <std::vector<std::shared_ptr<ParamDecl>>> param_list param_decl_list
@@ -58,29 +57,29 @@
 
 %%
 
-program: func_decl_list
+program: decl_list
 {
+    std::clog << "Parsing completed successfully." << std::endl;
     for (auto& decl : $1) {
         ast_builder.add_declaration(decl);
     }
     ast_builder.complete();
-    std::clog << "Parsing completed successfully." << std::endl;
 }
 ;
 
-func_decl_list: func_decl
+decl_list: func_decl
 {
     $$.push_back($1);
 }
-| func_decl_list func_decl
+| decl_list func_decl
 {
     $$ = $1;
     $$.push_back($2);
 }
-| func_decl_list type_spec decl_list EOL
+| decl_list type_spec var_decl_list EOL
 {
     $$ = $1;
-    // Add all variable declarations from decl_list
+    // global variables
     for (auto& var_decl : $3) {
         $$.push_back(var_decl);
     }
@@ -94,11 +93,7 @@ func_decl: type_spec func_name '(' param_list ')' block
         body = std::make_shared<BlockStmt>();
         if ($6) body->statements.push_back($6);
     }
-    $$ = ast_builder.make_func_decl($1, $2, nullptr, body);
-    auto func_decl = std::dynamic_pointer_cast<FuncDecl>($$);
-    if (func_decl) {
-        func_decl->parameters = $4;
-    }
+    $$ = ast_builder.make_func_decl($1, $2, $4, body);
 }
 ;
 
@@ -159,12 +154,12 @@ direct_declarator: IDENTIFIER
 }
 ;
 
-decl_list: IDENTIFIER
+var_decl_list: IDENTIFIER
 {
     auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $1);
     $$.push_back(var);
 }
-| decl_list ',' IDENTIFIER
+| var_decl_list ',' IDENTIFIER
 {
     $$ = $1;
     auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $3);
@@ -218,10 +213,10 @@ stmt_list: /* empty */
         $$.push_back($2);
     }
 }
-| stmt_list type_spec decl_list EOL
+| stmt_list type_spec var_decl_list EOL
 {
     $$ = $1;
-    // Add all variable declarations from decl_list
+    // local variables
     for (auto& var_decl : $3) {
         $$.push_back(var_decl);
     }
@@ -350,11 +345,7 @@ const_expr: INTEGER
 
 func_call_expr: IDENTIFIER '(' arg_list ')'
 {
-    $$ = ast_builder.make_func_call($1, nullptr);
-    auto func_call = std::dynamic_pointer_cast<FuncCallExpr>($$);
-    if (func_call) {
-        func_call->arguments = $3;
-    }
+    $$ = ast_builder.make_func_call($1, $3);
 }
 ;
 
