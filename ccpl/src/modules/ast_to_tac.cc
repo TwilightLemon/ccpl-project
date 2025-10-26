@@ -16,11 +16,24 @@ namespace twlm::ccpl::modules
         
         // Generate code for all declarations and link them together
         for (auto& decl : program->declarations) {
-            if (decl->kind == ASTNodeKind::VAR_DECL) {
+            if (decl->kind == ASTNodeKind::STRUCT_DECL) {
+                // Struct type declaration - must be processed first
+                auto struct_decl = std::dynamic_pointer_cast<StructDecl>(decl);
+                generate_struct_decl(struct_decl);
+                
+            } else if (decl->kind == ASTNodeKind::VAR_DECL) {
                 // Global variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(decl);
                 DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
                 auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
+                
+                // If it's a struct type, store the struct type name
+                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
+                    auto var_sym = tac_gen.get_var(var_decl->name);
+                    if (var_sym) {
+                        var_sym->struct_type_name = var_decl->var_type->struct_name;
+                    }
+                }
                 
                 // Link to global TAC chain
                 tac_gen.link_tac(var_tac);
@@ -64,6 +77,14 @@ namespace twlm::ccpl::modules
         
         DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
         auto var_tac = tac_gen.declare_var(decl->name, dtype);
+        
+        // If it's a struct type, store the struct type name
+        if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT) {
+            auto var_sym = tac_gen.get_var(decl->name);
+            if (var_sym) {
+                var_sym->struct_type_name = decl->var_type->struct_name;
+            }
+        }
         
         // For global variables, we don't generate initialization code in TAC
         // For local variables, initialization would be handled as a separate assignment statement
@@ -116,9 +137,19 @@ namespace twlm::ccpl::modules
     void ASTToTACGenerator::generate_struct_decl(std::shared_ptr<StructDecl> decl) {
         if (!decl) return;
         
-        // Struct declarations are not yet fully supported in TAC
-        // This would require extending the TAC structure
-        std::cerr << "Warning: Struct declarations are not yet fully supported in TAC generation" << std::endl;
+        // Extract field information
+        std::vector<std::pair<std::string, DATA_TYPE>> fields;
+        for (const auto& field : decl->fields) {
+            DATA_TYPE field_type = convert_type_to_data_type(field->var_type);
+            fields.push_back({field->name, field_type});
+        }
+        
+        // Register the struct type
+        auto struct_type = tac_gen.declare_struct_type(decl->name, fields);
+        
+        // Generate a TAC instruction for struct declaration (for documentation purposes)
+        auto tac = tac_gen.mk_tac(TAC_OP::STRUCT_DECL, struct_type);
+        tac_gen.link_tac(tac);
     }
 
     // ============ Statement Generation ============
@@ -132,6 +163,14 @@ namespace twlm::ccpl::modules
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(stmt);
                 DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
                 auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
+                
+                // If it's a struct type, store the struct type name
+                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
+                    auto var_sym = tac_gen.get_var(var_decl->name);
+                    if (var_sym) {
+                        var_sym->struct_type_name = var_decl->var_type->struct_name;
+                    }
+                }
                 
                 // Handle initialization
                 if (var_decl->init_value) {
@@ -384,8 +423,49 @@ namespace twlm::ccpl::modules
             return tac_gen.mk_exp(var, assign_tac);
         }
         
+        // For member access assignment (e.g., obj.field = value)
+        if (expr->target->kind == ASTNodeKind::MEMBER_ACCESS) {
+            auto member_expr = std::dynamic_pointer_cast<MemberAccessExpr>(expr->target);
+            
+            // Generate code for the object
+            auto object_exp = generate_expression(member_expr->object);
+            if (!object_exp || !object_exp->place) {
+                std::cerr << "Error: Invalid object in member access assignment" << std::endl;
+                return nullptr;
+            }
+            
+            // Generate code for the value
+            auto value_exp = generate_expression(expr->value);
+            if (!value_exp) {
+                return nullptr;
+            }
+            
+            // Get struct type information
+            auto struct_type = tac_gen.get_struct_type(object_exp->place->struct_type_name);
+            if (!struct_type) {
+                std::cerr << "Error: Unknown struct type in member assignment" << std::endl;
+                return nullptr;
+            }
+            
+            // For member assignment, we create a special representation:
+            // We create a TAC that represents: struct.field = value
+            // Using COPY operation with special field notation
+            
+            // Create a symbol representing the field of the struct
+            auto field_ref = tac_gen.mk_tmp(DATA_TYPE::INT);
+            field_ref->name = object_exp->place->name + "." + member_expr->member_name;
+            
+            // Generate TAC for: struct.field = value
+            auto assign_tac = tac_gen.mk_tac(TAC_OP::COPY, field_ref, value_exp->place);
+            
+            // Join all code together
+            auto code = tac_gen.join_tac(object_exp->code, value_exp->code);
+            code = tac_gen.join_tac(code, assign_tac);
+            
+            return tac_gen.mk_exp(field_ref, code);
+        }
+        
         // For more complex targets (array access, dereference, etc.)
-        // This would require extending TAC to support these operations
         std::cerr << "Warning: Complex assignment targets not yet fully supported" << std::endl;
         return nullptr;
     }
@@ -410,9 +490,47 @@ namespace twlm::ccpl::modules
     std::shared_ptr<EXP> ASTToTACGenerator::generate_member_access(std::shared_ptr<MemberAccessExpr> expr) {
         if (!expr) return nullptr;
         
-        // Member access would require extending TAC with struct support
-        std::cerr << "Warning: Member access not yet fully supported in TAC generation" << std::endl;
-        return nullptr;
+        // Generate code for the object expression
+        auto object_exp = generate_expression(expr->object);
+        if (!object_exp || !object_exp->place) {
+            std::cerr << "Error: Invalid object in member access" << std::endl;
+            return nullptr;
+        }
+        
+        // Ensure the object is a struct variable
+        if (object_exp->place->struct_type_name.empty()) {
+            std::cerr << "Error: Member access on non-struct type" << std::endl;
+            return nullptr;
+        }
+        
+        // Get struct type information to validate the field exists
+        auto struct_type = tac_gen.get_struct_type(object_exp->place->struct_type_name);
+        if (!struct_type) {
+            std::cerr << "Error: Unknown struct type: " << object_exp->place->struct_type_name << std::endl;
+            return nullptr;
+        }
+        
+        // Check if field exists
+        auto field_it = struct_type->struct_fields.find(expr->member_name);
+        if (field_it == struct_type->struct_fields.end()) {
+            std::cerr << "Error: Field '" << expr->member_name << "' not found in struct " 
+                      << struct_type->name << std::endl;
+            return nullptr;
+        }
+        
+        // Create a temporary to hold the field access result
+        auto result_tmp = tac_gen.mk_tmp(field_it->second.first);
+        result_tmp->name = object_exp->place->name + "." + expr->member_name;
+        
+        // For reading a member, we use COPY: tmp = struct.field
+        // The temporary's name already encodes the member access
+        // We can optionally generate a TAC comment or just use the symbolic name
+        
+        // Create the result expression
+        auto result_exp = tac_gen.mk_exp(result_tmp, object_exp->code);
+        result_exp->data_type = field_it->second.first;
+        
+        return result_exp;
     }
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_address_of(std::shared_ptr<AddressOfExpr> expr) {
@@ -438,6 +556,11 @@ namespace twlm::ccpl::modules
         
         if (type->kind == TypeKind::BASIC) {
             return type->basic_type;
+        }
+        
+        // For struct types, we use INT as a placeholder (represents a pointer/reference)
+        if (type->kind == TypeKind::STRUCT) {
+            return DATA_TYPE::INT;  // Simplified: struct as integer (address)
         }
         
         // For pointer, array, function types, we currently map them to basic types

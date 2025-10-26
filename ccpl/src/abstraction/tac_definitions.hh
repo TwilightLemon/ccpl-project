@@ -37,7 +37,8 @@ namespace twlm::ccpl::abstraction
         TEXT,
         LABEL,
         CONST_INT,
-        CONST_CHAR
+        CONST_CHAR,
+        STRUCT_TYPE  // For struct type definitions
     };
 
     // Symbol Scope
@@ -75,6 +76,8 @@ namespace twlm::ccpl::abstraction
         CALL,      // a = call b
         RETURN,    // return a
         INPUT,     // input a
-        OUTPUT     // output a
+        OUTPUT,    // output a
+        MEMBER,    // a = b.member (member access: a is destination, b is struct var, c holds field info)
+        STRUCT_DECL // struct declaration
     };
 }

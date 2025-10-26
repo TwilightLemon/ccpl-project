@@ -19,6 +19,8 @@
 
 "void"  {  return yy::parser::make_VOID();  }
 
+"struct"  {  return yy::parser::make_STRUCT();  }
+
 "input"  {  return yy::parser::make_INPUT();  }
 
 "output"  {  return yy::parser::make_OUTPUT();  }

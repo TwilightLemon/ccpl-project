@@ -23,6 +23,7 @@ namespace twlm::ccpl::modules
 
         std::unordered_map<std::string, std::shared_ptr<SYM>> sym_tab_global;
         std::unordered_map<std::string, std::shared_ptr<SYM>> sym_tab_local;
+        std::unordered_map<std::string, std::shared_ptr<SYM>> struct_types; // Struct type definitions
 
         std::shared_ptr<TAC> tac_first;
         std::shared_ptr<TAC> tac_last;
@@ -52,6 +53,12 @@ namespace twlm::ccpl::modules
         std::shared_ptr<SYM> mk_label(const std::string &name);
         std::shared_ptr<SYM> get_var(const std::string &name);
         std::shared_ptr<SYM> declare_func(const std::string &name, DATA_TYPE return_type);
+        
+        // Struct operations
+        std::shared_ptr<SYM> declare_struct_type(const std::string &name,
+                                                 const std::vector<std::pair<std::string, DATA_TYPE>>& fields);
+        std::shared_ptr<SYM> get_struct_type(const std::string &name);
+        std::shared_ptr<TAC> do_member_access(std::shared_ptr<SYM> struct_var, const std::string& field_name);
 
         // TAC operations
         std::shared_ptr<TAC> mk_tac(TAC_OP op,

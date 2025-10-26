@@ -33,6 +33,14 @@ namespace twlm::ccpl::modules
         return Type::make_array(base, size);
     }
 
+    std::shared_ptr<Type> ASTBuilder::make_struct_type(const std::string& struct_name)
+    {
+        auto type = std::make_shared<Type>(TypeKind::STRUCT);
+        type->struct_name = struct_name;
+        current_type = type;
+        return type;
+    }
+
     // ============ Expression Builders ============
 
     std::shared_ptr<Expression> ASTBuilder::make_const_int(int value)

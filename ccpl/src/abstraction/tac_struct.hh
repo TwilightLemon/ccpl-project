@@ -29,6 +29,9 @@ namespace twlm::ccpl::abstraction
         std::vector<DATA_TYPE> param_types; // Parameter types
         DATA_TYPE return_type;              // Return type
 
+        // For struct types
+        std::string struct_type_name;       // Name of struct type (if this is a struct variable)
+        std::unordered_map<std::string, std::pair<DATA_TYPE, int>> struct_fields; // field_name -> (type, offset)
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
@@ -41,6 +44,7 @@ namespace twlm::ccpl::abstraction
             case SYM_TYPE::VAR:
             case SYM_TYPE::FUNC:
             case SYM_TYPE::LABEL:
+            case SYM_TYPE::STRUCT_TYPE:
                 return name;
 
             case SYM_TYPE::TEXT:
@@ -174,6 +178,13 @@ namespace twlm::ccpl::abstraction
                 break;
             case TAC_OP::ENDFUNC:
                 oss << "end";
+                break;
+            case TAC_OP::MEMBER:
+                // a = b.c where c contains the field name
+                oss << a->to_string() << " = " << b->to_string() << "." << c->to_string();
+                break;
+            case TAC_OP::STRUCT_DECL:
+                oss << "struct " << a->to_string();
                 break;
             default:
                 oss << "undef";

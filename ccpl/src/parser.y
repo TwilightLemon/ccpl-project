@@ -22,7 +22,7 @@
 }
 
 %token EOL
-%token INT CHAR VOID
+%token INT CHAR VOID STRUCT
 %token EQ NE LT LE GT GE UMINUS
 %token IF ELSE FOR WHILE INPUT OUTPUT RETURN
 %token BREAK CONTINUE
@@ -32,13 +32,13 @@
 %token <int> INTEGER
 %token <char> CHARACTER
 
-%type <std::shared_ptr<Declaration>> func_decl
+%type <std::shared_ptr<Declaration>> func_decl struct_decl
 %type <std::vector<std::shared_ptr<Declaration>>> decl_list
 
 %type <std::shared_ptr<Statement>> statement block expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt while_stmt for_stmt
 %type <std::vector<std::shared_ptr<Statement>>> stmt_list
 
-%type <std::vector<std::shared_ptr<VarDecl>>> var_decl_list
+%type <std::vector<std::shared_ptr<VarDecl>>> var_decl_list struct_field_list
 
 %type <std::shared_ptr<ParamDecl>> param_decl
 %type <std::vector<std::shared_ptr<ParamDecl>>> param_list param_decl_list
@@ -71,7 +71,16 @@ decl_list: func_decl
 {
     $$.push_back($1);
 }
+| struct_decl
+{
+    $$.push_back($1);
+}
 | decl_list func_decl
+{
+    $$ = $1;
+    $$.push_back($2);
+}
+| decl_list struct_decl
 {
     $$ = $1;
     $$.push_back($2);
@@ -97,6 +106,25 @@ func_decl: type_spec func_name '(' param_list ')' block
 }
 ;
 
+struct_decl: STRUCT IDENTIFIER '{' struct_field_list '}' EOL
+{
+    $$ = ast_builder.make_struct_decl($2, $4);
+}
+;
+
+struct_field_list: type_spec var_decl_list EOL
+{
+    $$ = $2;
+}
+| struct_field_list type_spec var_decl_list EOL
+{
+    $$ = $1;
+    for (auto& var : $3) {
+        $$.push_back(var);
+    }
+}
+;
+
 func_name: IDENTIFIER
 {
     $$ = $1;
@@ -117,6 +145,10 @@ type_spec: INT
 {
     ast_builder.set_current_type(DATA_TYPE::VOID);
     $$ = ast_builder.make_basic_type(DATA_TYPE::VOID);
+}
+| STRUCT IDENTIFIER
+{
+    $$ = ast_builder.make_struct_type($2);
 }
 ;
 
@@ -353,6 +385,15 @@ assign_expr: IDENTIFIER '=' expression
 {
     auto target = ast_builder.make_identifier($1);
     $$ = ast_builder.make_assign(target, $3);
+}
+| expression '.' IDENTIFIER '=' expression
+{
+    auto member = ast_builder.make_member_access($1, $3, false);
+    $$ = ast_builder.make_assign(member, $5);
+}
+| expression '.' IDENTIFIER
+{
+    $$ = ast_builder.make_member_access($1, $3, false);
 }
 ;
 

@@ -28,6 +28,7 @@ namespace twlm::ccpl::modules
         std::shared_ptr<Type> make_basic_type(DATA_TYPE dt);
         std::shared_ptr<Type> make_pointer_type(std::shared_ptr<Type> base);
         std::shared_ptr<Type> make_array_type(std::shared_ptr<Type> base, int size);
+        std::shared_ptr<Type> make_struct_type(const std::string& struct_name);
 
         // Expression builders
         std::shared_ptr<Expression> make_const_int(int value);

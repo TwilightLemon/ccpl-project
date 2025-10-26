@@ -847,3 +847,76 @@ void TACGenerator::link_tac(std::shared_ptr<TAC> tac) {
     // Update tac_last to point to this new TAC
     tac_last = tac;
 }
+
+// ============ Struct Support ============
+
+std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
+                                                       const std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
+    // Check if struct type already exists
+    auto it = struct_types.find(name);
+    if (it != struct_types.end()) {
+        error("Struct type already declared: " + name);
+        return it->second;
+    }
+    
+    // Create struct type symbol
+    auto struct_sym = std::make_shared<SYM>();
+    struct_sym->type = SYM_TYPE::STRUCT_TYPE;
+    struct_sym->name = name;
+    struct_sym->scope = SYM_SCOPE::GLOBAL;
+    
+    // Store field information
+    int offset = 0;
+    for (const auto& field : fields) {
+        struct_sym->struct_fields[field.first] = {field.second, offset};
+        offset += 4;  // Simplified: each field takes 4 bytes
+    }
+    
+    struct_types[name] = struct_sym;
+    return struct_sym;
+}
+
+std::shared_ptr<SYM> TACGenerator::get_struct_type(const std::string& name) {
+    auto it = struct_types.find(name);
+    if (it == struct_types.end()) {
+        error("Struct type not declared: " + name);
+        return nullptr;
+    }
+    return it->second;
+}
+
+std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_var, 
+                                                    const std::string& field_name) {
+    if (!struct_var) {
+        error("Invalid struct variable in member access");
+        return nullptr;
+    }
+    
+    // Get struct type information
+    auto struct_type = get_struct_type(struct_var->struct_type_name);
+    if (!struct_type) {
+        error("Unknown struct type: " + struct_var->struct_type_name);
+        return nullptr;
+    }
+    
+    // Find field in struct
+    auto field_it = struct_type->struct_fields.find(field_name);
+    if (field_it == struct_type->struct_fields.end()) {
+        error("Field '" + field_name + "' not found in struct " + struct_type->name);
+        return nullptr;
+    }
+    
+    // Create a temporary to hold the field access result
+    auto result_tmp = mk_tmp(field_it->second.first);
+    
+    // Create a symbol for the field name (for TAC representation)
+    auto field_sym = std::make_shared<SYM>();
+    field_sym->type = SYM_TYPE::VAR;
+    field_sym->name = field_name;
+    field_sym->data_type = field_it->second.first;
+    
+    // Generate TAC for member access: result = struct_var.field
+    auto tac = mk_tac(TAC_OP::MEMBER, result_tmp, struct_var, field_sym);
+    
+    return tac;
+}
