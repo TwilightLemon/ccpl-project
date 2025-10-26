@@ -2,8 +2,8 @@ int add(int a, int b) {
     return a + b;
 }
 
+int x, y, z;
 int main() {
-    int x, y, z;
     x = 5;
     y = 10;
     

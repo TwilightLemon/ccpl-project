@@ -257,7 +257,14 @@ std::shared_ptr<TAC> TACGenerator::do_func(std::shared_ptr<SYM> func,
     code = join_tac(args, code);
     tend->prev = join_tac(tbegin, code);
     
-    // Update tac_last
+    // Link this function to the previous TAC
+    if (tac_last != nullptr) {
+        // Find the beginning of this function's TAC
+        auto func_start = tlab;
+        func_start->prev = tac_last;
+    }
+    
+    // Update tac_last to the end of this function
     tac_last = tend;
     
     return tend;
@@ -827,4 +834,16 @@ void TACGenerator::print_symbol_table(std::ostream& os) {
     
     //sym_tab_local不会打印，因为离开函数作用域后局部符号表会被清空
     os << std::endl;
+}
+
+void TACGenerator::link_tac(std::shared_ptr<TAC> tac) {
+    if (!tac) return;
+    
+    // Link this TAC to the current tac_last
+    if (tac_last != nullptr) {
+        tac->prev = tac_last;
+    }
+    
+    // Update tac_last to point to this new TAC
+    tac_last = tac;
 }

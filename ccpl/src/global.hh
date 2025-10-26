@@ -1,5 +1,7 @@
 #pragma once
-#include "modules/tac.hh"
+#include "modules/ast_builder.hh"
+#include "modules/ast_to_tac.hh"
 #include "modules/opt.hh"
-// Global TAC generator instance
-extern twlm::ccpl::modules::TACGenerator tac_gen;
+
+// Global AST builder instance
+extern twlm::ccpl::modules::ASTBuilder ast_builder;

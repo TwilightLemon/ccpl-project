@@ -23,6 +23,9 @@ sources = [
   'src/modules/tac.cc',
   'src/modules/opt.cc',
   'src/modules/block.cc',
+  'src/abstraction/ast_nodes.cc',
+  'src/modules/ast_builder.cc',
+  'src/modules/ast_to_tac.cc',
   flex_gen,
   parser_gen
 ]

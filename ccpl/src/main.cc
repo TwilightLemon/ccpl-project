@@ -2,7 +2,8 @@
 #include "global.hh"
 #include <iostream>
 
-twlm::ccpl::modules::TACGenerator tac_gen;
+twlm::ccpl::modules::ASTBuilder ast_builder;
+
 int main(int argc, char *argv[])
 {
     if (argc != 2)
@@ -21,27 +22,50 @@ int main(int argc, char *argv[])
     extern FILE *yyin;
     yyin = input_file;
 
-    tac_gen.init();
+    ast_builder.init();
 
     try
     {
+        // Step 1: Parse and build AST
         yy::parser parser;
         int result = parser.parse();
         fclose(input_file);
+        
+        if (result != 0) {
+            std::cerr << "Parsing failed" << std::endl;
+            return result;
+        }
+
+        // Step 2: Get the AST
+        auto program = ast_builder.get_program();
+        
+        // Optional: Print AST for debugging
+        std::clog << "=== AST ===" << std::endl;
+        std::clog << program->to_string() << std::endl;
+        std::clog << std::endl;
+
+        // Step 3: Generate TAC from AST
+        twlm::ccpl::modules::ASTToTACGenerator tac_generator;
+        tac_generator.generate(program);
+        
+        auto& tac_gen = tac_generator.get_tac_generator();
+        
+        // Print symbol table
         tac_gen.print_symbol_table();
 
-        //先log一个原始结果：
+        // Log original TAC
         std::clog << "=== Original TAC ===" << std::endl;
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
+        // Step 4: Optimize TAC
         twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
         opt.optimize();
 
-        //写入标准输出的是最终结果
+        // Step 5: Output final TAC to stdout
         tac_gen.print_tac();
 
-        return result;
+        return 0;
     }
     catch (const std::exception &e)
     {

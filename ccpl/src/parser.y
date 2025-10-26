@@ -7,6 +7,7 @@
 %code requires {
     #include <string>
     #include <memory>
+    #include <vector>
     #include "global.hh"
     using namespace twlm::ccpl::abstraction;
 }
@@ -19,7 +20,6 @@
     yy::parser::symbol_type yylex();
     extern int yylineno;
 }
-/*TODO: struct支持*/
 
 %token EOL
 %token INT CHAR VOID
@@ -32,13 +32,23 @@
 %token <int> INTEGER
 %token <char> CHARACTER
 
-%type <std::shared_ptr<TAC>> func_decl_list func_decl function decl decl_list block stmt_list statement
-%type <std::shared_ptr<TAC>> expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt
-%type <std::shared_ptr<TAC>> while_stmt for_stmt
-%type <std::shared_ptr<TAC>> param_list param_decl_list param_decl
-%type <std::shared_ptr<EXP>> expression const_expr func_call_expr assign_expr arg_list arg_list_nonempty
-%type <std::shared_ptr<SYM>> func_header
-%type <DATA_TYPE> type_spec
+%type <std::shared_ptr<Declaration>> func_decl
+%type <std::vector<std::shared_ptr<Declaration>>> func_decl_list
+
+%type <std::shared_ptr<Statement>> statement block expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt while_stmt for_stmt
+%type <std::vector<std::shared_ptr<Statement>>> stmt_list
+
+%type <std::shared_ptr<VarDecl>> var_decl
+%type <std::vector<std::shared_ptr<VarDecl>>> decl_list
+
+%type <std::shared_ptr<ParamDecl>> param_decl
+%type <std::vector<std::shared_ptr<ParamDecl>>> param_list param_decl_list
+
+%type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr
+%type <std::vector<std::shared_ptr<Expression>>> arg_list arg_list_nonempty
+
+%type <std::shared_ptr<Type>> type_spec declarator direct_declarator pointer
+%type <std::string> func_name
 
 %right '='
 %right UMINUS
@@ -50,26 +60,49 @@
 
 program: func_decl_list
 {
-    tac_gen.complete();
+    for (auto& decl : $1) {
+        ast_builder.add_declaration(decl);
+    }
+    ast_builder.complete();
     std::clog << "Parsing completed successfully." << std::endl;
 }
 ;
 
 func_decl_list: func_decl
 {
-    $$ = $1;
+    $$.push_back($1);
 }
 | func_decl_list func_decl
 {
-    $$ = tac_gen.join_tac($1, $2);
+    $$ = $1;
+    $$.push_back($2);
+}
+| func_decl_list type_spec decl_list EOL
+{
+    $$ = $1;
+    // Add all variable declarations from decl_list
+    for (auto& var_decl : $3) {
+        $$.push_back(var_decl);
+    }
 }
 ;
 
-func_decl: function
+func_decl: type_spec func_name '(' param_list ')' block
 {
-    $$ = $1;
+    auto body = std::dynamic_pointer_cast<BlockStmt>($6);
+    if (!body) {
+        body = std::make_shared<BlockStmt>();
+        if ($6) body->statements.push_back($6);
+    }
+    $$ = ast_builder.make_func_decl($1, $2, nullptr, body);
+    auto func_decl = std::dynamic_pointer_cast<FuncDecl>($$);
+    if (func_decl) {
+        func_decl->parameters = $4;
+    }
 }
-| decl
+;
+
+func_name: IDENTIFIER
 {
     $$ = $1;
 }
@@ -77,67 +110,71 @@ func_decl: function
 
 type_spec: INT
 {
-    tac_gen.set_current_type(DATA_TYPE::INT);
-    $$ = DATA_TYPE::INT;
+    ast_builder.set_current_type(DATA_TYPE::INT);
+    $$ = ast_builder.make_basic_type(DATA_TYPE::INT);
 }
 | CHAR
 {
-    tac_gen.set_current_type(DATA_TYPE::CHAR);
-    $$ = DATA_TYPE::CHAR;
+    ast_builder.set_current_type(DATA_TYPE::CHAR);
+    $$ = ast_builder.make_basic_type(DATA_TYPE::CHAR);
 }
 | VOID
 {
-    tac_gen.set_current_type(DATA_TYPE::VOID);
-    $$ = DATA_TYPE::VOID;
+    ast_builder.set_current_type(DATA_TYPE::VOID);
+    $$ = ast_builder.make_basic_type(DATA_TYPE::VOID);
 }
 ;
 
-declarator : pointer direct_declarator
+declarator: pointer direct_declarator
+{
+    $$ = ast_builder.make_pointer_type($2);
+}
 | direct_declarator
+{
+    $$ = $1;
+}
 ;
 
-pointer:  '*'
-|'*' pointer
+pointer: '*'
+{
+    $$ = ast_builder.get_current_type();
+}
+| '*' pointer
+{
+    $$ = ast_builder.make_pointer_type($2);
+}
 ;
 
-direct_declarator : IDENTIFIER
+direct_declarator: IDENTIFIER
+{
+    $$ = ast_builder.get_current_type();
+}
 | '(' declarator ')'
-| direct_declarator '[' INTEGER ']'
-;
-
-decl: type_spec decl_list EOL
 {
     $$ = $2;
+}
+| direct_declarator '[' INTEGER ']'
+{
+    $$ = ast_builder.make_array_type($1, $3);
 }
 ;
 
 decl_list: IDENTIFIER
 {
-    $$ = tac_gen.declare_var($1, tac_gen.get_current_type());
+    auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $1);
+    $$.push_back(var);
 }
 | decl_list ',' IDENTIFIER
 {
-    $$ = tac_gen.join_tac($1, tac_gen.declare_var($3, tac_gen.get_current_type()));
-}
-;
-
-function: func_header '(' param_list ')' block
-{
-    $$ = tac_gen.do_func($1, $3, $5);
-    tac_gen.leave_scope();
-}
-;
-
-func_header: type_spec IDENTIFIER
-{
-    $$ = tac_gen.declare_func($2, $1);
-    tac_gen.enter_scope();
+    $$ = $1;
+    auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $3);
+    $$.push_back(var);
 }
 ;
 
 param_list: /* empty */
 {
-    $$ = nullptr;
+    $$ = std::vector<std::shared_ptr<ParamDecl>>();
 }
 | param_decl_list
 {
@@ -147,41 +184,51 @@ param_list: /* empty */
 
 param_decl_list: param_decl
 {
-    $$ = $1;
+    $$.push_back($1);
 }
 | param_decl_list ',' param_decl
 {
-    $$ = tac_gen.join_tac($1, $3);
+    $$ = $1;
+    $$.push_back($3);
 }
 ;
 
 param_decl: type_spec IDENTIFIER
 {
-    $$ = tac_gen.declare_para($2, $1);
+    $$ = ast_builder.make_param_decl($1, $2);
 }
 ;
 
 block: '{' stmt_list '}'
 {
-    $$ = $2;
+    auto block = std::make_shared<BlockStmt>();
+    block->statements = $2;
+    $$ = block;
 }
 ;
 
 stmt_list: /* empty */
 {
-    $$ = nullptr;
+    $$ = std::vector<std::shared_ptr<Statement>>();
 }
 | stmt_list statement
 {
-    $$ = tac_gen.join_tac($1, $2);
+    $$ = $1;
+    if ($2) {
+        $$.push_back($2);
+    }
+}
+| stmt_list type_spec decl_list EOL
+{
+    $$ = $1;
+    // Add all variable declarations from decl_list
+    for (auto& var_decl : $3) {
+        $$.push_back(var_decl);
+    }
 }
 ;
 
-statement: decl
-{
-    $$ = $1;
-}
-| if_stmt
+statement: if_stmt
 {
     $$ = $1;
 }
@@ -211,127 +258,110 @@ statement: decl
 }
 | BREAK EOL
 {
-    $$ = tac_gen.do_break();
+    $$ = ast_builder.make_break_stmt();
 }
 | CONTINUE EOL
 {
-    $$ = tac_gen.do_continue();
+    $$ = ast_builder.make_continue_stmt();
 }
 | switch_stmt
 {
     $$ = $1;
 }
-| CASE INTEGER ':'{
-    $$ = tac_gen.do_case($2);
+| CASE INTEGER ':'
+{
+    $$ = ast_builder.make_case_stmt($2);
 }
-| DEFAULT ':'{
-    $$ = tac_gen.do_default();
+| DEFAULT ':'
+{
+    $$ = ast_builder.make_default_stmt();
 }
 ;
 
 expr_stmt: expression
 {
-    $$ = $1->code;
+    $$ = ast_builder.make_expr_stmt($1);
 }
 ;
 
 if_stmt: IF '(' expression ')' block
 {
-    $$ = tac_gen.do_if($3, $5);
+    $$ = ast_builder.make_if_stmt($3, $5);
 }
 | IF '(' expression ')' block ELSE block
 {
-    $$ = tac_gen.do_if_else($3, $5, $7);
+    $$ = ast_builder.make_if_stmt($3, $5, $7);
 }
 ;
 
-while_stmt: WHILE 
+while_stmt: WHILE '(' expression ')' block
 {
-    tac_gen.begin_while_loop();
-}
-'(' expression ')' block
-{
-    $$ = tac_gen.end_while_loop($4, $6);
+    $$ = ast_builder.make_while_stmt($3, $5);
 }
 ;
 
-for_stmt: FOR
+for_stmt: FOR '(' expr_stmt EOL expression EOL expr_stmt ')' block
 {
-    tac_gen.begin_for_loop();
-}
-'(' expr_stmt EOL expression EOL expr_stmt ')' block
-{
-    $$ = tac_gen.end_for_loop($4, $6, $8, $10);
+    $$ = ast_builder.make_for_stmt($3, $5, $7 ? std::dynamic_pointer_cast<ExprStmt>($7)->expression : nullptr, $9);
 }
 ;
 
-switch_stmt: SWITCH 
+switch_stmt: SWITCH '(' expression ')' block
 {
-    tac_gen.begin_switch();
-}
-'(' expression ')'block
-{
-    $$ = tac_gen.end_switch($4, $6);
+    $$ = ast_builder.make_switch_stmt($3, $5);
 }
 ;
 
 input_stmt: INPUT IDENTIFIER
 {
-    $$ = tac_gen.do_input(tac_gen.get_var($2));
+    $$ = ast_builder.make_input_stmt($2);
 }
 ;
 
 output_stmt: OUTPUT expression
 {
-    auto output_tac = tac_gen.do_output($2->place);
-    $$ = tac_gen.join_tac($2->code, output_tac);
+    $$ = ast_builder.make_output_stmt($2);
 }
 ;
 
 return_stmt: RETURN expression
 {
-    $$ = tac_gen.do_return($2);
+    $$ = ast_builder.make_return_stmt($2);
 }
 | RETURN
 {
-    $$ = tac_gen.do_return(nullptr);
+    $$ = ast_builder.make_return_stmt();
 }
 ;
 
 const_expr: INTEGER
 {
-    auto sym = tac_gen.mk_const($1);
-    auto exp = tac_gen.mk_exp(sym, nullptr);
-    exp->data_type = DATA_TYPE::INT;
-    $$ = exp;
+    $$ = ast_builder.make_const_int($1);
 }
 | CHARACTER
 {
-    auto sym = tac_gen.mk_const_char($1);
-    auto exp = tac_gen.mk_exp(sym, nullptr);
-    exp->data_type = DATA_TYPE::CHAR;
-    $$ = exp;
+    $$ = ast_builder.make_const_char($1);
 }
 | TEXT
 {
-    auto sym = tac_gen.mk_text($1);
-    auto exp = tac_gen.mk_exp(sym, nullptr);
-    exp->data_type = DATA_TYPE::CHAR;  // String is array of char
-    $$ = exp;
+    $$ = ast_builder.make_string_literal($1);
 }
 ;
 
 func_call_expr: IDENTIFIER '(' arg_list ')'
 {
-    $$ = tac_gen.do_call_ret($1, $3);
+    $$ = ast_builder.make_func_call($1, nullptr);
+    auto func_call = std::dynamic_pointer_cast<FuncCallExpr>($$);
+    if (func_call) {
+        func_call->arguments = $3;
+    }
 }
 ;
 
 assign_expr: IDENTIFIER '=' expression
 {
-    auto assign_tac = tac_gen.do_assign(tac_gen.get_var($1), $3);
-    // Return expression with the assigned variable as place
-    $$ = tac_gen.mk_exp(tac_gen.get_var($1), assign_tac);
+    auto target = ast_builder.make_identifier($1);
+    $$ = ast_builder.make_assign(target, $3);
 }
 ;
 
@@ -349,56 +379,51 @@ expression: const_expr
 }
 | IDENTIFIER
 {
-    auto var = tac_gen.get_var($1);
-    auto exp = tac_gen.mk_exp(var, nullptr);
-    if (var) {
-        exp->data_type = var->data_type;
-    }
-    $$ = exp;
+    $$ = ast_builder.make_identifier($1);
 }
 | expression '+' expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::ADD, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::ADD, $1, $3);
 }
 | expression '-' expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::SUB, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::SUB, $1, $3);
 }
 | expression '*' expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::MUL, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::MUL, $1, $3);
 }
 | expression '/' expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::DIV, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::DIV, $1, $3);
 }
 | expression EQ expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::EQ, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::EQ, $1, $3);
 }
 | expression NE expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::NE, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::NE, $1, $3);
 }
 | expression LT expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::LT, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::LT, $1, $3);
 }
 | expression LE expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::LE, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::LE, $1, $3);
 }
 | expression GT expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::GT, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::GT, $1, $3);
 }
 | expression GE expression
 {
-    $$ = tac_gen.do_bin(TAC_OP::GE, $1, $3);
+    $$ = ast_builder.make_binary_op(TAC_OP::GE, $1, $3);
 }
 | '-' expression %prec UMINUS
 {
-    $$ = tac_gen.do_un(TAC_OP::NEG, $2);
+    $$ = ast_builder.make_unary_op(TAC_OP::NEG, $2);
 }
 | '(' expression ')'
 {
@@ -408,7 +433,7 @@ expression: const_expr
 
 arg_list: /* empty */
 {
-    $$ = nullptr;
+    $$ = std::vector<std::shared_ptr<Expression>>();
 }
 | arg_list_nonempty
 {
@@ -418,12 +443,12 @@ arg_list: /* empty */
 
 arg_list_nonempty: expression
 {
-    $$ = $1;
+    $$.push_back($1);
 }
 | arg_list_nonempty ',' expression
 {
-    $3->next = $1;
-    $$ = $3;
+    $$ = $1;
+    $$.push_back($3);
 }
 ;
 

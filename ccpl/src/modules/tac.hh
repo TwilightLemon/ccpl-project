@@ -139,5 +139,8 @@ namespace twlm::ccpl::modules
         // Getters
         std::shared_ptr<TAC> get_tac_first() const { return tac_first; }
         std::shared_ptr<TAC> get_tac_last() const { return tac_last; }
+        
+        // Link a TAC node to the global TAC chain
+        void link_tac(std::shared_ptr<TAC> tac);
     };
 }
