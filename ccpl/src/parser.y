@@ -48,6 +48,7 @@
 
 %type <std::shared_ptr<Type>> type_spec declarator direct_declarator pointer
 %type <std::string> func_name
+%type <std::pair<std::shared_ptr<Type>, std::string>> var_declarator
 
 %right '='
 %right UMINUS
@@ -186,15 +187,31 @@ direct_declarator: IDENTIFIER
 }
 ;
 
-var_decl_list: IDENTIFIER
+var_declarator: IDENTIFIER
 {
-    auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $1);
+    $$ = std::make_pair(ast_builder.get_current_type(), $1);
+}
+| IDENTIFIER '[' INTEGER ']'
+{
+    auto array_type = ast_builder.make_array_type(ast_builder.get_current_type(), $3);
+    $$ = std::make_pair(array_type, $1);
+}
+| var_declarator '[' INTEGER ']'
+{
+    auto array_type = ast_builder.make_array_type($1.first, $3);
+    $$ = std::make_pair(array_type, $1.second);
+}
+;
+
+var_decl_list: var_declarator
+{
+    auto var = ast_builder.make_var_decl($1.first, $1.second);
     $$.push_back(var);
 }
-| var_decl_list ',' IDENTIFIER
+| var_decl_list ',' var_declarator
 {
     $$ = $1;
-    auto var = ast_builder.make_var_decl(ast_builder.get_current_type(), $3);
+    auto var = ast_builder.make_var_decl($3.first, $3.second);
     $$.push_back(var);
 }
 ;
@@ -386,10 +403,19 @@ assign_expr: IDENTIFIER '=' expression
     auto target = ast_builder.make_identifier($1);
     $$ = ast_builder.make_assign(target, $3);
 }
+| expression '[' expression ']' '=' expression
+{
+    auto array_access = ast_builder.make_array_access($1, $3);
+    $$ = ast_builder.make_assign(array_access, $6);
+}
 | expression '.' IDENTIFIER '=' expression
 {
     auto member = ast_builder.make_member_access($1, $3, false);
     $$ = ast_builder.make_assign(member, $5);
+}
+| expression '[' expression ']'
+{
+    $$ = ast_builder.make_array_access($1, $3);
 }
 | expression '.' IDENTIFIER
 {

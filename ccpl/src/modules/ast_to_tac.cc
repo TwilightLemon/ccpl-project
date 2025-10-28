@@ -25,8 +25,13 @@ namespace twlm::ccpl::modules
                 // Global variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(decl);
                 
+                // Check if it's an array type
+                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY) {
+                    // Expand the array into individual element variables
+                    expand_array_decl(var_decl->var_type, var_decl->name);
+                }
                 // Check if it's a struct type
-                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
+                else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
                     // Get the struct type definition
                     auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
                     if (struct_type) {
@@ -85,6 +90,14 @@ namespace twlm::ccpl::modules
 
     void ASTToTACGenerator::generate_var_decl(std::shared_ptr<VarDecl> decl) {
         if (!decl) return;
+        
+        // Check if it's an array type
+        if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY) {
+            // Flatten the array into individual element variables
+            // For int a[10], create: a[0], a[1], ..., a[9]
+            expand_array_decl(decl->var_type, decl->name);
+            return;
+        }
         
         // Check if it's a struct type
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT) {
@@ -178,6 +191,14 @@ namespace twlm::ccpl::modules
     }
 
     void ASTToTACGenerator::extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields){
+        // Handle array fields
+        if (field->var_type && field->var_type->kind == TypeKind::ARRAY) {
+            // Expand array fields into individual elements
+            expand_struct_array_field(field->var_type, field->name, fields);
+            return;
+        }
+        
+        // Handle struct fields
         if(field->var_type && field->var_type->kind==TypeKind::STRUCT){
             auto struct_type = tac_gen.get_struct_type(field->var_type->struct_name);
             if(struct_type){
@@ -198,6 +219,12 @@ namespace twlm::ccpl::modules
         // Extract field information
         std::vector<std::pair<std::string, DATA_TYPE>> fields;
         for (const auto& field : decl->fields) {
+            // Handle array fields
+            if (field->var_type && field->var_type->kind == TypeKind::ARRAY) {
+                expand_struct_array_field(field->var_type, field->name, fields);
+                continue;
+            }
+            
             DATA_TYPE field_type = convert_type_to_data_type(field->var_type);
             if(field_type==DATA_TYPE::STRUCT){
                 // Handle nested struct types
@@ -220,8 +247,32 @@ namespace twlm::ccpl::modules
                 // Local variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(stmt);
                 
+                // Check if it's an array type
+                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY) {
+                    // Expand the array into individual element variables
+                    int array_size = var_decl->var_type->array_size;
+                    auto element_type = var_decl->var_type->base_type;
+                    std::shared_ptr<TAC> result_tac = nullptr;
+                    
+                    for (int i = 0; i < array_size; ++i) {
+                        std::string elem_name = var_decl->name + "[" + std::to_string(i) + "]";
+                        
+                        // Check if element is also an array (multi-dimensional)
+                        if (element_type->kind == TypeKind::ARRAY) {
+                            // This gets complex - for now, just flatten
+                            // Would need recursive handling for proper multi-dimensional support
+                            std::cerr << "Warning: Multi-dimensional local arrays may not be fully supported" << std::endl;
+                        }
+                        
+                        DATA_TYPE dtype = convert_type_to_data_type(element_type);
+                        auto elem_tac = tac_gen.declare_var(elem_name, dtype);
+                        result_tac = tac_gen.join_tac(result_tac, elem_tac);
+                    }
+                    
+                    return result_tac;
+                }
                 // Check if it's a struct type
-                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
+                else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
                     // Get the struct type definition
                     auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
                     if (struct_type) {
@@ -538,7 +589,32 @@ namespace twlm::ccpl::modules
             return tac_gen.mk_exp(field_var, assign_tac);
         }
         
-        // For more complex targets (array access, dereference, etc.)
+        // For array access assignment
+        if (expr->target->kind == ASTNodeKind::ARRAY_ACCESS) {
+            // Generate the target array access expression to get the variable
+            auto target_exp = generate_array_access(std::dynamic_pointer_cast<ArrayAccessExpr>(expr->target));
+            if (!target_exp || !target_exp->place) {
+                std::cerr << "Error: Failed to generate array access target" << std::endl;
+                return nullptr;
+            }
+            
+            // Generate the value expression
+            auto value_exp = generate_expression(expr->value);
+            if (!value_exp) {
+                return nullptr;
+            }
+            
+            // Generate assignment: array_element = value
+            auto assign_tac = tac_gen.do_assign(target_exp->place, value_exp);
+            
+            // Combine the target code (if any) with the assignment
+            auto combined_tac = tac_gen.join_tac(target_exp->code, assign_tac);
+            
+            // Return expression with the array element as result
+            return tac_gen.mk_exp(target_exp->place, combined_tac);
+        }
+        
+        // For other complex targets (dereference, etc.)
         std::cerr << "Warning: Complex assignment targets not yet fully supported" << std::endl;
         return nullptr;
     }
@@ -554,9 +630,55 @@ namespace twlm::ccpl::modules
     std::shared_ptr<EXP> ASTToTACGenerator::generate_array_access(std::shared_ptr<ArrayAccessExpr> expr) {
         if (!expr) return nullptr;
         
-        // Array access would require extending TAC with address arithmetic
-        // For now, we'll emit a warning
-        std::cerr << "Warning: Array access not yet fully supported in TAC generation" << std::endl;
+        // For constant array indices, we can flatten the access into a variable name
+        // e.g., a[2] -> a[2], arr[i][j] -> requires runtime computation
+        
+        // Check if the index is a constant
+        if (expr->index->kind == ASTNodeKind::CONST_INT) {
+            auto const_index = std::dynamic_pointer_cast<ConstIntExpr>(expr->index);
+            int index_value = const_index->value;
+            
+            // Build the flattened variable name
+            std::string base_name;
+            
+            // Check if the base is an identifier (simple array)
+            if (expr->array->kind == ASTNodeKind::IDENTIFIER) {
+                auto id = std::dynamic_pointer_cast<IdentifierExpr>(expr->array);
+                base_name = id->name + "[" + std::to_string(index_value) + "]";
+            }
+            // Check if the base is another array access (multi-dimensional)
+            else if (expr->array->kind == ASTNodeKind::ARRAY_ACCESS) {
+                // Build the full expression string using to_string
+                auto base_array = std::dynamic_pointer_cast<ArrayAccessExpr>(expr->array);
+                
+                // Use to_string to build the base name for the entire nested access
+                std::string full_expr = expr->to_string();
+                base_name = full_expr;
+            }
+            // Check if the base is a member access (struct field array)
+            else if (expr->array->kind == ASTNodeKind::MEMBER_ACCESS) {
+                auto member = std::dynamic_pointer_cast<MemberAccessExpr>(expr->array);
+                base_name = member->to_string() + "[" + std::to_string(index_value) + "]";
+            }
+            
+            if (!base_name.empty()) {
+                // Look up the flattened array element variable
+                auto elem_var = tac_gen.get_var(base_name);
+                if (!elem_var) {
+                    std::cerr << "Error: Array element variable not found: " << base_name << std::endl;
+                    return nullptr;
+                }
+                
+                // Create expression with the array element variable
+                auto result_exp = tac_gen.mk_exp(elem_var, nullptr);
+                result_exp->data_type = elem_var->data_type;
+                return result_exp;
+            }
+        }
+        
+        // For non-constant indices, we would need runtime address computation
+        // This is not yet implemented in the TAC system
+        std::cerr << "Warning: Non-constant array indices not yet supported in TAC generation" << std::endl;
         return nullptr;
     }
 
@@ -637,4 +759,79 @@ namespace twlm::ccpl::modules
         return result;
     }
 
+    void ASTToTACGenerator::expand_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name) {
+        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
+        
+        int array_size = array_type->array_size;
+        auto element_type = array_type->base_type;
+        
+        // For each array element
+        for (int i = 0; i < array_size; ++i) {
+            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
+            
+            // Check if the element type is also an array (multi-dimensional)
+            if (element_type->kind == TypeKind::ARRAY) {
+                // Recursively expand nested arrays
+                expand_array_decl(element_type, elem_name);
+            }
+            // Check if the element type is a struct
+            else if (element_type->kind == TypeKind::STRUCT) {
+                // Get the struct type definition
+                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
+                if (struct_type) {
+                    // Expand struct fields for each array element
+                    for (const auto& field : struct_type->struct_fields) {
+                        std::string field_name = elem_name + "." + field.first;
+                        DATA_TYPE field_type = field.second.first;
+                        auto field_var_tac = tac_gen.declare_var(field_name, field_type);
+                    }
+                }
+            }
+            // Otherwise, it's a basic type
+            else {
+                DATA_TYPE dtype = convert_type_to_data_type(element_type);
+                auto elem_var_tac = tac_gen.declare_var(elem_name, dtype);
+            }
+        }
+    }
+
+    void ASTToTACGenerator::expand_struct_array_field(std::shared_ptr<Type> array_type, 
+                                                       const std::string& base_name,
+                                                       std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
+        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
+        
+        int array_size = array_type->array_size;
+        auto element_type = array_type->base_type;
+        
+        // For each array element
+        for (int i = 0; i < array_size; ++i) {
+            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
+            
+            // Check if the element type is also an array (multi-dimensional)
+            if (element_type->kind == TypeKind::ARRAY) {
+                // Recursively expand nested arrays
+                expand_struct_array_field(element_type, elem_name, fields);
+            }
+            // Check if the element type is a struct
+            else if (element_type->kind == TypeKind::STRUCT) {
+                // Get the struct type definition
+                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
+                if (struct_type) {
+                    // Expand struct fields for each array element
+                    for (const auto& field : struct_type->struct_fields) {
+                        std::string field_name = elem_name + "." + field.first;
+                        DATA_TYPE field_type = field.second.first;
+                        fields.push_back({field_name, field_type});
+                    }
+                }
+            }
+            // Otherwise, it's a basic type
+            else {
+                DATA_TYPE dtype = convert_type_to_data_type(element_type);
+                fields.push_back({elem_name, dtype});
+            }
+        }
+    }
+
 } // namespace twlm::ccpl::modules
+

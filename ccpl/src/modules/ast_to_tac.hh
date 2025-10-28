@@ -75,6 +75,13 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
 
         void extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields);
+        
+        // Helper to expand array declarations into individual element variables
+        void expand_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name);
+        
+        // Helper to expand array fields in struct definitions
+        void expand_struct_array_field(std::shared_ptr<Type> array_type, const std::string& base_name, 
+                                       std::vector<std::pair<std::string, DATA_TYPE>>& fields);
     };
 
 } // namespace twlm::ccpl::modules
