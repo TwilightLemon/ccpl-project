@@ -179,13 +179,6 @@ namespace twlm::ccpl::abstraction
             case TAC_OP::ENDFUNC:
                 oss << "end";
                 break;
-            case TAC_OP::MEMBER:
-                // a = b.c where c contains the field name
-                oss << a->to_string() << " = " << b->to_string() << "." << c->to_string();
-                break;
-            case TAC_OP::STRUCT_DECL:
-                oss << "struct " << a->to_string();
-                break;
             default:
                 oss << "undef";
                 break;

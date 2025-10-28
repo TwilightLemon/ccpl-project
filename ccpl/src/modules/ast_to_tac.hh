@@ -73,6 +73,8 @@ namespace twlm::ccpl::modules
         
         // Helper to convert expression vector to linked list for function calls
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
+
+        void extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields);
     };
 
 } // namespace twlm::ccpl::modules

@@ -1,3 +1,13 @@
+struct Info{
+    int id;
+    char name;
+};
+struct Color {
+    struct Info info;
+    char r;
+    char g;
+    char b;
+};
 struct Point {
     int x;
     int y;
@@ -6,22 +16,25 @@ struct Point {
 struct Rectangle {
     int width;
     int height;
+    struct Color color;
+    struct Point pos;
 };
 
-struct Point p1;
 struct Rectangle rect;
+struct Info info;
+struct Color color;
 
 int main() {
-    p1.x = 10;
-    p1.y = 20;
-    
     rect.width = 100;
     rect.height = 50;
+
+    rect.pos.x = 10;
+    rect.pos.y = 20;
     
-    output p1.x;
-    output p1.y;
     output rect.width;
     output rect.height;
-    
+    output rect.pos.x;
+    output rect.pos.y;
+
     return 0;
 }

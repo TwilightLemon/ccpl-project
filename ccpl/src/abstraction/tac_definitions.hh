@@ -8,6 +8,7 @@ namespace twlm::ccpl::abstraction
         VOID,
         INT,
         CHAR,
+        STRUCT,
         UNDEF
     };
 
@@ -76,8 +77,6 @@ namespace twlm::ccpl::abstraction
         CALL,      // a = call b
         RETURN,    // return a
         INPUT,     // input a
-        OUTPUT,    // output a
-        MEMBER,    // a = b.member (member access: a is destination, b is struct var, c holds field info)
-        STRUCT_DECL // struct declaration
+        OUTPUT     // output a
     };
 }

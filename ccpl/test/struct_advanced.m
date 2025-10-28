@@ -13,24 +13,24 @@ struct Vector add(struct Vector a, struct Vector b) {
 }
 
 int main() {
-    struct Vector v1;
-    struct Vector v2;
+    struct Vector a;
+    struct Vector b;
     
-    v1.x = 1;
-    v1.y = 2;
-    v1.z = 3;
+    a.x = 1;
+    a.y = 2;
+    a.z = 3;
     
-    v2.x = 4;
-    v2.y = 5;
-    v2.z = 6;
+    b.x = 4;
+    b.y = 5;
+    b.z = 6;
     
-    output v1.x;
-    output v1.y;
-    output v1.z;
+    output a.x;
+    output a.y;
+    output a.z;
     
-    output v2.x;
-    output v2.y;
-    output v2.z;
+    output b.x;
+    output b.y;
+    output b.z;
     
     return 0;
 }

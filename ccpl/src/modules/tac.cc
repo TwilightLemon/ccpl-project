@@ -887,36 +887,25 @@ std::shared_ptr<SYM> TACGenerator::get_struct_type(const std::string& name) {
 
 std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_var, 
                                                     const std::string& field_name) {
+    // Note: This function is deprecated since TAC now uses flattened variable names
+    // Member access like p1.x is represented as a single variable "p1.x"
+    // This function is kept for backward compatibility but should not be used
+    
     if (!struct_var) {
         error("Invalid struct variable in member access");
         return nullptr;
     }
     
-    // Get struct type information
-    auto struct_type = get_struct_type(struct_var->struct_type_name);
-    if (!struct_type) {
-        error("Unknown struct type: " + struct_var->struct_type_name);
+    // In the new implementation, member access doesn't generate TAC instructions
+    // Instead, the field is accessed via the flattened variable name: struct_var.field_name
+    std::string field_var_name = struct_var->name + "." + field_name;
+    auto field_var = get_var(field_var_name);
+    
+    if (!field_var) {
+        error("Field variable not found: " + field_var_name);
         return nullptr;
     }
     
-    // Find field in struct
-    auto field_it = struct_type->struct_fields.find(field_name);
-    if (field_it == struct_type->struct_fields.end()) {
-        error("Field '" + field_name + "' not found in struct " + struct_type->name);
-        return nullptr;
-    }
-    
-    // Create a temporary to hold the field access result
-    auto result_tmp = mk_tmp(field_it->second.first);
-    
-    // Create a symbol for the field name (for TAC representation)
-    auto field_sym = std::make_shared<SYM>();
-    field_sym->type = SYM_TYPE::VAR;
-    field_sym->name = field_name;
-    field_sym->data_type = field_it->second.first;
-    
-    // Generate TAC for member access: result = struct_var.field
-    auto tac = mk_tac(TAC_OP::MEMBER, result_tmp, struct_var, field_sym);
-    
-    return tac;
+    // No TAC instruction needed, member access is implicit through variable naming
+    return nullptr;
 }

@@ -24,19 +24,30 @@ namespace twlm::ccpl::modules
             } else if (decl->kind == ASTNodeKind::VAR_DECL) {
                 // Global variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(decl);
-                DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
-                auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
                 
-                // If it's a struct type, store the struct type name
+                // Check if it's a struct type
                 if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
-                    auto var_sym = tac_gen.get_var(var_decl->name);
-                    if (var_sym) {
-                        var_sym->struct_type_name = var_decl->var_type->struct_name;
+                    // Get the struct type definition
+                    auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
+                    if (struct_type) {
+                        // Expand the struct into individual field variables
+                        for (const auto& field : struct_type->struct_fields) {
+                            std::string field_var_name = var_decl->name + "." + field.first;
+                            DATA_TYPE field_type = field.second.first;
+                            auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
+                            
+                            // Link to global TAC chain
+                            tac_gen.link_tac(field_var_tac);
+                        }
                     }
+                } else {
+                    // Normal variable
+                    DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
+                    auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
+                    
+                    // Link to global TAC chain
+                    tac_gen.link_tac(var_tac);
                 }
-                
-                // Link to global TAC chain
-                tac_gen.link_tac(var_tac);
                 
             } else if (decl->kind == ASTNodeKind::FUNC_DECL) {
                 // Function declaration - generates and links TAC
@@ -75,19 +86,35 @@ namespace twlm::ccpl::modules
     void ASTToTACGenerator::generate_var_decl(std::shared_ptr<VarDecl> decl) {
         if (!decl) return;
         
+        // Check if it's a struct type
+        if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT) {
+            // Get the struct type definition
+            auto struct_type = tac_gen.get_struct_type(decl->var_type->struct_name);
+            if (!struct_type) {
+                std::cerr << "Error: Unknown struct type: " << decl->var_type->struct_name << std::endl;
+                return;
+            }
+            
+            // Expand the struct into individual field variables
+            // For struct Point p1, create: p1.x and p1.y
+            for (const auto& field : struct_type->struct_fields) {
+                std::string field_var_name = decl->name + "." + field.first;
+                DATA_TYPE field_type = field.second.first;
+                auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
+                
+                // Don't link yet for local variables (will be linked as part of statement generation)
+                // For global variables, this will be handled by the caller
+            }
+            
+            // Note: We don't create a variable for the struct itself in TAC
+            // The struct variable only exists at the AST level
+            return;
+        }
+        
+        // For non-struct types, normal variable declaration
         DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
         auto var_tac = tac_gen.declare_var(decl->name, dtype);
         
-        // If it's a struct type, store the struct type name
-        if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT) {
-            auto var_sym = tac_gen.get_var(decl->name);
-            if (var_sym) {
-                var_sym->struct_type_name = decl->var_type->struct_name;
-            }
-        }
-        
-        // For global variables, we don't generate initialization code in TAC
-        // For local variables, initialization would be handled as a separate assignment statement
         // Only handle initialization if there's an init value and we're in a function context
         if (decl->init_value && current_function) {
             auto init_exp = generate_expression(decl->init_value);
@@ -109,9 +136,25 @@ namespace twlm::ccpl::modules
         // Generate parameter declarations
         std::shared_ptr<TAC> param_code = nullptr;
         for (auto& param : decl->parameters) {
-            DATA_TYPE param_type = convert_type_to_data_type(param->param_type);
-            auto param_tac = tac_gen.declare_para(param->name, param_type);
-            param_code = tac_gen.join_tac(param_code, param_tac);
+            // Check if parameter is a struct type
+            if (param->param_type && param->param_type->kind == TypeKind::STRUCT) {
+                // Get the struct type definition
+                auto struct_type = tac_gen.get_struct_type(param->param_type->struct_name);
+                if (struct_type) {
+                    // Expand the struct parameter into individual field parameters
+                    for (const auto& field : struct_type->struct_fields) {
+                        std::string field_param_name = param->name + "." + field.first;
+                        DATA_TYPE field_type = field.second.first;
+                        auto field_param_tac = tac_gen.declare_para(field_param_name, field_type);
+                        param_code = tac_gen.join_tac(param_code, field_param_tac);
+                    }
+                }
+            } else {
+                // Normal parameter
+                DATA_TYPE param_type = convert_type_to_data_type(param->param_type);
+                auto param_tac = tac_gen.declare_para(param->name, param_type);
+                param_code = tac_gen.join_tac(param_code, param_tac);
+            }
         }
         
         // Generate function body
@@ -134,6 +177,19 @@ namespace twlm::ccpl::modules
         tac_gen.declare_para(decl->name, dtype);
     }
 
+    void ASTToTACGenerator::extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields){
+        if(field->var_type && field->var_type->kind==TypeKind::STRUCT){
+            auto struct_type = tac_gen.get_struct_type(field->var_type->struct_name);
+            if(struct_type){
+                for(const auto &sub_field:struct_type->struct_fields){
+                    std::string nested_field_name=field->name+"."+sub_field.first;
+                    DATA_TYPE nested_field_type=sub_field.second.first;
+                    fields.push_back({nested_field_name,nested_field_type});
+                }
+            }
+        }
+    }
+
     void ASTToTACGenerator::generate_struct_decl(std::shared_ptr<StructDecl> decl) {
         if (!decl) return;
         
@@ -141,15 +197,15 @@ namespace twlm::ccpl::modules
         std::vector<std::pair<std::string, DATA_TYPE>> fields;
         for (const auto& field : decl->fields) {
             DATA_TYPE field_type = convert_type_to_data_type(field->var_type);
+            if(field_type==DATA_TYPE::STRUCT){
+                // Handle nested struct types
+                extract_struct_fields(field, fields);
+                continue;// Skip adding the original field ()
+            }
             fields.push_back({field->name, field_type});
         }
         
-        // Register the struct type
         auto struct_type = tac_gen.declare_struct_type(decl->name, fields);
-        
-        // Generate a TAC instruction for struct declaration (for documentation purposes)
-        auto tac = tac_gen.mk_tac(TAC_OP::STRUCT_DECL, struct_type);
-        tac_gen.link_tac(tac);
     }
 
     // ============ Statement Generation ============
@@ -161,25 +217,44 @@ namespace twlm::ccpl::modules
             case ASTNodeKind::VAR_DECL: {
                 // Local variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(stmt);
-                DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
-                auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
                 
-                // If it's a struct type, store the struct type name
+                // Check if it's a struct type
                 if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
-                    auto var_sym = tac_gen.get_var(var_decl->name);
-                    if (var_sym) {
-                        var_sym->struct_type_name = var_decl->var_type->struct_name;
+                    // Get the struct type definition
+                    auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
+                    if (struct_type) {
+                        // Expand the struct into individual field variables
+                        std::shared_ptr<TAC> result_tac = nullptr;
+                        for (const auto& field : struct_type->struct_fields) {
+                            std::string field_var_name = var_decl->name + "." + field.first;
+                            DATA_TYPE field_type = field.second.first;
+                            auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
+                            result_tac = tac_gen.join_tac(result_tac, field_var_tac);
+                        }
+                        
+                        // Handle initialization if present
+                        // Note: struct initialization would need special handling
+                        if (var_decl->init_value) {
+                            std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
+                        }
+                        
+                        return result_tac;
                     }
+                } else {
+                    // Normal variable
+                    DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
+                    auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
+                    
+                    // Handle initialization
+                    if (var_decl->init_value) {
+                        auto init_exp = generate_expression(var_decl->init_value);
+                        auto var_sym = tac_gen.get_var(var_decl->name);
+                        auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
+                        return tac_gen.join_tac(var_tac, assign_tac);
+                    }
+                    return var_tac;
                 }
-                
-                // Handle initialization
-                if (var_decl->init_value) {
-                    auto init_exp = generate_expression(var_decl->init_value);
-                    auto var_sym = tac_gen.get_var(var_decl->name);
-                    auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
-                    return tac_gen.join_tac(var_tac, assign_tac);
-                }
-                return var_tac;
+                return nullptr;
             }
             case ASTNodeKind::EXPR_STMT:
                 return generate_expr_stmt(std::dynamic_pointer_cast<ExprStmt>(stmt));
@@ -273,6 +348,22 @@ namespace twlm::ccpl::modules
         if (!stmt) return nullptr;
         
         if (stmt->return_value) {
+            // Check if returning a struct (identifier that doesn't exist as a single variable)
+            // In TAC, struct returns are not supported since TAC is type-agnostic
+            if (stmt->return_value->kind == ASTNodeKind::IDENTIFIER) {
+                auto id_expr = std::dynamic_pointer_cast<IdentifierExpr>(stmt->return_value);
+                if (id_expr) {
+                    auto var = tac_gen.get_var(id_expr->name);
+                    if (!var) {
+                        // This might be a struct variable (which is expanded into fields)
+                        // For now, just return without a value (struct return not supported in TAC)
+                        std::cerr << "Warning: Returning struct value '" << id_expr->name 
+                                  << "' - TAC doesn't support struct returns, returning void" << std::endl;
+                        return tac_gen.do_return(nullptr);
+                    }
+                }
+            }
+            
             auto ret_exp = generate_expression(stmt->return_value);
             return tac_gen.do_return(ret_exp);
         } else {
@@ -427,12 +518,8 @@ namespace twlm::ccpl::modules
         if (expr->target->kind == ASTNodeKind::MEMBER_ACCESS) {
             auto member_expr = std::dynamic_pointer_cast<MemberAccessExpr>(expr->target);
             
-            // Generate code for the object
-            auto object_exp = generate_expression(member_expr->object);
-            if (!object_exp || !object_exp->place) {
-                std::cerr << "Error: Invalid object in member access assignment" << std::endl;
-                return nullptr;
-            }
+            
+            std::string field_var_name=member_expr->to_string();
             
             // Generate code for the value
             auto value_exp = generate_expression(expr->value);
@@ -440,29 +527,17 @@ namespace twlm::ccpl::modules
                 return nullptr;
             }
             
-            // Get struct type information
-            auto struct_type = tac_gen.get_struct_type(object_exp->place->struct_type_name);
-            if (!struct_type) {
-                std::cerr << "Error: Unknown struct type in member assignment" << std::endl;
+            auto field_var = tac_gen.get_var(field_var_name);
+            if (!field_var) {
+                std::cerr << "Error: Field variable not found: " << field_var_name << std::endl;
                 return nullptr;
             }
             
-            // For member assignment, we create a special representation:
-            // We create a TAC that represents: struct.field = value
-            // Using COPY operation with special field notation
+            // Generate assignment: field_var = value
+            auto assign_tac = tac_gen.do_assign(field_var, value_exp);
             
-            // Create a symbol representing the field of the struct
-            auto field_ref = tac_gen.mk_tmp(DATA_TYPE::INT);
-            field_ref->name = object_exp->place->name + "." + member_expr->member_name;
-            
-            // Generate TAC for: struct.field = value
-            auto assign_tac = tac_gen.mk_tac(TAC_OP::COPY, field_ref, value_exp->place);
-            
-            // Join all code together
-            auto code = tac_gen.join_tac(object_exp->code, value_exp->code);
-            code = tac_gen.join_tac(code, assign_tac);
-            
-            return tac_gen.mk_exp(field_ref, code);
+            // Return expression with the field variable as result
+            return tac_gen.mk_exp(field_var, assign_tac);
         }
         
         // For more complex targets (array access, dereference, etc.)
@@ -489,46 +564,19 @@ namespace twlm::ccpl::modules
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_member_access(std::shared_ptr<MemberAccessExpr> expr) {
         if (!expr) return nullptr;
-        
-        // Generate code for the object expression
-        auto object_exp = generate_expression(expr->object);
-        if (!object_exp || !object_exp->place) {
-            std::cerr << "Error: Invalid object in member access" << std::endl;
+
+        std::string field_var_name=expr->to_string();
+
+        // Look up the flattened field variable
+        auto field_var = tac_gen.get_var(field_var_name);
+        if (!field_var) {
+            std::cerr << "Error: Field variable not found: " << field_var_name << std::endl;
             return nullptr;
         }
         
-        // Ensure the object is a struct variable
-        if (object_exp->place->struct_type_name.empty()) {
-            std::cerr << "Error: Member access on non-struct type" << std::endl;
-            return nullptr;
-        }
-        
-        // Get struct type information to validate the field exists
-        auto struct_type = tac_gen.get_struct_type(object_exp->place->struct_type_name);
-        if (!struct_type) {
-            std::cerr << "Error: Unknown struct type: " << object_exp->place->struct_type_name << std::endl;
-            return nullptr;
-        }
-        
-        // Check if field exists
-        auto field_it = struct_type->struct_fields.find(expr->member_name);
-        if (field_it == struct_type->struct_fields.end()) {
-            std::cerr << "Error: Field '" << expr->member_name << "' not found in struct " 
-                      << struct_type->name << std::endl;
-            return nullptr;
-        }
-        
-        // Create a temporary to hold the field access result
-        auto result_tmp = tac_gen.mk_tmp(field_it->second.first);
-        result_tmp->name = object_exp->place->name + "." + expr->member_name;
-        
-        // For reading a member, we use COPY: tmp = struct.field
-        // The temporary's name already encodes the member access
-        // We can optionally generate a TAC comment or just use the symbolic name
-        
-        // Create the result expression
-        auto result_exp = tac_gen.mk_exp(result_tmp, object_exp->code);
-        result_exp->data_type = field_it->second.first;
+        // Create expression with the field variable, no additional code needed
+        auto result_exp = tac_gen.mk_exp(field_var, nullptr);
+        result_exp->data_type = field_var->data_type;
         
         return result_exp;
     }
@@ -558,16 +606,12 @@ namespace twlm::ccpl::modules
             return type->basic_type;
         }
         
-        // For struct types, we use INT as a placeholder (represents a pointer/reference)
         if (type->kind == TypeKind::STRUCT) {
-            return DATA_TYPE::INT;  // Simplified: struct as integer (address)
+            return DATA_TYPE::STRUCT;
         }
         
-        // For pointer, array, function types, we currently map them to basic types
-        // This is a simplification and would need to be extended for full support
         if (type->kind == TypeKind::POINTER || type->kind == TypeKind::ARRAY) {
-            // Return the base type for now
-            return convert_type_to_data_type(type->base_type);
+             return DATA_TYPE::INT;
         }
         
         if (type->kind == TypeKind::FUNCTION) {
