@@ -60,7 +60,8 @@ int main(int argc, char *argv[])
     catch (const std::exception &e)
     {
         std::cerr << "Error: " << e.what() << std::endl;
-        fclose(input_file);
+        if(input_file)
+            fclose(input_file);
         return 1;
     }
 }

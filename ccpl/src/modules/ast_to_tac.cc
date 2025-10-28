@@ -186,6 +186,8 @@ namespace twlm::ccpl::modules
                     DATA_TYPE nested_field_type=sub_field.second.first;
                     fields.push_back({nested_field_name,nested_field_type});
                 }
+            }else{
+                throw std::runtime_error("Unknown struct type: "+field->var_type->struct_name);
             }
         }
     }
@@ -514,14 +516,10 @@ namespace twlm::ccpl::modules
             return tac_gen.mk_exp(var, assign_tac);
         }
         
-        // For member access assignment (e.g., obj.field = value)
         if (expr->target->kind == ASTNodeKind::MEMBER_ACCESS) {
             auto member_expr = std::dynamic_pointer_cast<MemberAccessExpr>(expr->target);
-            
-            
             std::string field_var_name=member_expr->to_string();
             
-            // Generate code for the value
             auto value_exp = generate_expression(expr->value);
             if (!value_exp) {
                 return nullptr;

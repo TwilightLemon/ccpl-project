@@ -8,7 +8,7 @@ namespace twlm::ccpl::abstraction
         VOID,
         INT,
         CHAR,
-        STRUCT,
+        STRUCT, //for recognizing struct types only, not a real basic TAC type(
         UNDEF
     };
 

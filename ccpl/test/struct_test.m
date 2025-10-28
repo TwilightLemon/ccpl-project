@@ -3,7 +3,7 @@ struct Info{
     char name;
 };
 struct Color {
-    struct Info info;
+    struct Infoc info;
     char r;
     char g;
     char b;
