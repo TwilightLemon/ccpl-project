@@ -2,6 +2,7 @@
 #include <memory>
 #include <vector>
 #include <string>
+#include <functional>
 #include "abstraction/ast_nodes.hh"
 #include "tac.hh"
 
@@ -76,16 +77,8 @@ namespace twlm::ccpl::modules
 
         void extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields);
         
-        // Helper to expand array declarations into individual element variables
-        void expand_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name);
-        
-        // Helper to expand local array declarations (returns TAC code)
-        void expand_local_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name, 
-                                     std::shared_ptr<TAC>& result_tac);
-        
-        // Helper to expand array fields in struct definitions
-        void expand_struct_array_field(std::shared_ptr<Type> array_type, const std::string& base_name, 
-                                       std::vector<std::pair<std::string, DATA_TYPE>>& fields);
+        void expand_array_elements(std::shared_ptr<Type> array_type, const std::string& base_name,
+                                  std::function<void(const std::string&, DATA_TYPE)> handler);
     };
 
 } // namespace twlm::ccpl::modules

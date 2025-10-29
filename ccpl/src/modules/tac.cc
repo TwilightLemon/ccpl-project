@@ -345,11 +345,8 @@ std::shared_ptr<TAC> TACGenerator::do_if(std::shared_ptr<EXP> exp, std::shared_p
 std::shared_ptr<TAC> TACGenerator::do_if_else(std::shared_ptr<EXP> exp,
                                                std::shared_ptr<TAC> stmt1,
                                                std::shared_ptr<TAC> stmt2) {
-    auto label1_name = "L" + std::to_string(next_label++);
-    auto label2_name = "L" + std::to_string(next_label++);
-    
-    auto label1 = mk_tac(TAC_OP::LABEL, mk_label(label1_name));
-    auto label2 = mk_tac(TAC_OP::LABEL, mk_label(label2_name));
+    auto label1 = mk_tac(TAC_OP::LABEL, mk_label("L" + std::to_string(next_label++)));
+    auto label2 = mk_tac(TAC_OP::LABEL, mk_label("L" + std::to_string(next_label++)));
     
     auto code1 = mk_tac(TAC_OP::IFZ, label1->a, exp->place);
     auto code2 = mk_tac(TAC_OP::GOTO, label2->a);
@@ -392,10 +389,9 @@ std::shared_ptr<TAC> TACGenerator::do_while(std::shared_ptr<EXP> exp, std::share
 }
 
 void TACGenerator::begin_while_loop() {
-    auto continue_label_name = "L" + std::to_string(next_label++);
-    auto break_label_name = "L" + std::to_string(next_label++);
-    
-    enter_loop(mk_label(break_label_name), mk_label(continue_label_name));
+    auto continue_label = mk_label("L" + std::to_string(next_label++));
+    auto break_label = mk_label("L" + std::to_string(next_label++));
+    enter_loop(break_label, continue_label);
 }
 
 std::shared_ptr<TAC> TACGenerator::end_while_loop(std::shared_ptr<EXP> exp, std::shared_ptr<TAC> stmt) {
@@ -405,11 +401,10 @@ std::shared_ptr<TAC> TACGenerator::end_while_loop(std::shared_ptr<EXP> exp, std:
 }
 
 void TACGenerator::begin_for_loop() {
-    auto loop_start_name = "L" + std::to_string(next_label++);
-    auto continue_label_name = "L" + std::to_string(next_label++);
-    auto break_label_name = "L" + std::to_string(next_label++);
-    
-    enter_loop(mk_label(break_label_name), mk_label(continue_label_name), mk_label(loop_start_name));
+    auto loop_start = mk_label("L" + std::to_string(next_label++));
+    auto continue_label = mk_label("L" + std::to_string(next_label++));
+    auto break_label = mk_label("L" + std::to_string(next_label++));
+    enter_loop(break_label, continue_label, loop_start);
 }
 
 std::shared_ptr<TAC> TACGenerator::end_for_loop(std::shared_ptr<TAC> init,
@@ -422,9 +417,9 @@ std::shared_ptr<TAC> TACGenerator::end_for_loop(std::shared_ptr<TAC> init,
 }
 
 void TACGenerator::begin_switch() {
-    auto break_label_name = "L" + std::to_string(next_label++);
-    auto default_label_name = "L" + std::to_string(next_label++);
-    enter_switch(mk_label(break_label_name), mk_label(default_label_name));
+    auto break_label = mk_label("L" + std::to_string(next_label++));
+    auto default_label = mk_label("L" + std::to_string(next_label++));
+    enter_switch(break_label, default_label);
 }
 
 
@@ -462,12 +457,8 @@ std::shared_ptr<TAC> TACGenerator::end_switch(std::shared_ptr<EXP> exp, std::sha
     }
     
     auto& ctx = switch_stack.back();
-    auto break_label_sym = ctx.break_label;
-    auto default_label_sym = ctx.default_label;
+    auto switch_end = mk_tac(TAC_OP::LABEL, ctx.break_label);
     
-    auto switch_end = mk_tac(TAC_OP::LABEL, break_label_sym);
-    
-    // Generate CASE jumps
     std::shared_ptr<TAC> case_jumps = nullptr;
     for (const auto& [case_value, case_label] : ctx.case_labels) {
         // 创建中间变量 tmp = exp - case_value
@@ -486,8 +477,7 @@ std::shared_ptr<TAC> TACGenerator::end_switch(std::shared_ptr<EXP> exp, std::sha
         case_jumps = case_jump;
     }
     
-    // Jump to default if no cases matched
-    auto goto_default = mk_tac(TAC_OP::GOTO, default_label_sym);
+    auto goto_default = mk_tac(TAC_OP::GOTO, ctx.default_label);
     goto_default->prev = case_jumps;
     case_jumps = goto_default;
     
@@ -514,18 +504,14 @@ std::shared_ptr<TAC> TACGenerator::do_for(std::shared_ptr<TAC> init,
     //   goto loop_start
     // break_label:
     auto loop=loop_stack.back();
-    auto loop_start_sym = loop.loop_start_label;
-    auto continue_label_sym = loop.continue_label;
-    auto break_label_sym = loop.break_label;
     
-    auto loop_start = mk_tac(TAC_OP::LABEL, loop_start_sym);
-    auto continue_label = mk_tac(TAC_OP::LABEL, continue_label_sym);
-    auto break_label = mk_tac(TAC_OP::LABEL, break_label_sym);
+    auto loop_start = mk_tac(TAC_OP::LABEL, loop.loop_start_label);
+    auto continue_label = mk_tac(TAC_OP::LABEL, loop.continue_label);
+    auto break_label = mk_tac(TAC_OP::LABEL, loop.break_label);
     
-    auto ifz = mk_tac(TAC_OP::IFZ, break_label_sym, cond->place);
-    auto goto_loop = mk_tac(TAC_OP::GOTO, loop_start_sym);
+    auto ifz = mk_tac(TAC_OP::IFZ, loop.break_label, cond->place);
+    auto goto_loop = mk_tac(TAC_OP::GOTO, loop.loop_start_label);
     
-    // Build: init -> loop_start -> cond code -> ifz -> body -> continue_label -> update -> goto -> break_label
     auto result = join_tac(init, loop_start);
     result = join_tac(result, cond->code);
     ifz->prev = result;
@@ -541,12 +527,10 @@ std::shared_ptr<TAC> TACGenerator::do_for(std::shared_ptr<TAC> init,
 std::shared_ptr<TAC> TACGenerator::do_call(const std::string& name, std::shared_ptr<EXP> arglist) {
     std::shared_ptr<TAC> code = nullptr;
     
-    // Generate code for all arguments
     for (auto arg = arglist; arg != nullptr; arg = arg->next) {
         code = join_tac(code, arg->code);
     }
     
-    // Generate ACTUAL instructions in reverse order
     while (arglist != nullptr) {
         auto temp = mk_tac(TAC_OP::ACTUAL, arglist->place);
         temp->prev = code;
@@ -554,7 +538,6 @@ std::shared_ptr<TAC> TACGenerator::do_call(const std::string& name, std::shared_
         arglist = arglist->next;
     }
     
-    // Generate CALL instruction
     auto func_name = std::make_shared<SYM>();
     func_name->type = SYM_TYPE::FUNC;
     func_name->name = name;
@@ -611,14 +594,12 @@ std::shared_ptr<EXP> TACGenerator::do_un(TAC_OP op, std::shared_ptr<EXP> exp) {
 }
 
 std::shared_ptr<EXP> TACGenerator::do_call_ret(const std::string& name, std::shared_ptr<EXP> arglist) {
-    // Look up function to get return type
     auto func_sym = lookup_sym(name);
-    DATA_TYPE return_type = DATA_TYPE::INT;  // Default
+    DATA_TYPE return_type = DATA_TYPE::INT;
     
     if (func_sym != nullptr && func_sym->type == SYM_TYPE::FUNC) {
         return_type = func_sym->return_type;
         
-        // Type check arguments
         int param_count = 0;
         for (auto arg = arglist; arg != nullptr; arg = arg->next) {
             if (param_count < func_sym->param_types.size()) {
@@ -639,12 +620,10 @@ std::shared_ptr<EXP> TACGenerator::do_call_ret(const std::string& name, std::sha
     auto ret = mk_tmp(return_type);
     auto code = mk_tac(TAC_OP::VAR, ret);
     
-    // Generate code for all arguments
     for (auto arg = arglist; arg != nullptr; arg = arg->next) {
         code = join_tac(code, arg->code);
     }
     
-    // Generate ACTUAL instructions
     while (arglist != nullptr) {
         auto temp = mk_tac(TAC_OP::ACTUAL, arglist->place);
         temp->prev = code;
@@ -652,7 +631,6 @@ std::shared_ptr<EXP> TACGenerator::do_call_ret(const std::string& name, std::sha
         arglist = arglist->next;
     }
     
-    // Generate CALL instruction with return value
     auto func_name = std::make_shared<SYM>();
     func_name->type = SYM_TYPE::FUNC;
     func_name->name = name;
@@ -852,24 +830,21 @@ void TACGenerator::link_tac(std::shared_ptr<TAC> tac) {
 
 std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
                                                        const std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
-    // Check if struct type already exists
     auto it = struct_types.find(name);
     if (it != struct_types.end()) {
         error("Struct type already declared: " + name);
         return it->second;
     }
     
-    // Create struct type symbol
     auto struct_sym = std::make_shared<SYM>();
     struct_sym->type = SYM_TYPE::STRUCT_TYPE;
     struct_sym->name = name;
     struct_sym->scope = SYM_SCOPE::GLOBAL;
     
-    // Store field information with preserved order
     int offset = 0;
     for (const auto& field : fields) {
         struct_sym->struct_fields.push_back({field.first, field.second, offset});
-        offset += 4;  // Simplified: each field takes 4 bytes
+        offset += 4;
     }
     
     struct_types[name] = struct_sym;
@@ -896,8 +871,6 @@ std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_
         return nullptr;
     }
     
-    // In the new implementation, member access doesn't generate TAC instructions
-    // Instead, the field is accessed via the flattened variable name: struct_var.field_name
     std::string field_var_name = struct_var->name + "." + field_name;
     auto field_var = get_var(field_var_name);
     
@@ -906,6 +879,5 @@ std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_
         return nullptr;
     }
     
-    // No TAC instruction needed, member access is implicit through variable naming
     return nullptr;
 }

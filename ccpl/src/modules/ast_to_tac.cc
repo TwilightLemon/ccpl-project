@@ -25,32 +25,27 @@ namespace twlm::ccpl::modules
                 // Global variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(decl);
                 
-                // Check if it's an array type
                 if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY) {
-                    // Expand the array into individual element variables
-                    expand_array_decl(var_decl->var_type, var_decl->name);
+                    expand_array_elements(var_decl->var_type, var_decl->name,
+                        [this](const std::string& name, DATA_TYPE dtype) {
+                            tac_gen.declare_var(name, dtype);
+                        });
                 }
-                // Check if it's a struct type
                 else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
-                    // Get the struct type definition
                     auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
                     if (struct_type) {
-                        // Expand the struct into individual field variables
                         for (const auto& field : struct_type->struct_fields) {
                             std::string field_var_name = var_decl->name + "." + std::get<0>(field);
                             DATA_TYPE field_type = std::get<1>(field);
                             auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
                             
-                            // Link to global TAC chain
                             tac_gen.link_tac(field_var_tac);
                         }
                     }
                 } else {
-                    // Normal variable
                     DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
                     auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
                     
-                    // Link to global TAC chain
                     tac_gen.link_tac(var_tac);
                 }
                 
@@ -91,49 +86,36 @@ namespace twlm::ccpl::modules
     void ASTToTACGenerator::generate_var_decl(std::shared_ptr<VarDecl> decl) {
         if (!decl) return;
         
-        // Check if it's an array type
         if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY) {
-            // Flatten the array into individual element variables
-            // For int a[10], create: a[0], a[1], ..., a[9]
-            expand_array_decl(decl->var_type, decl->name);
+            expand_array_elements(decl->var_type, decl->name,
+                [this](const std::string& name, DATA_TYPE dtype) {
+                    tac_gen.declare_var(name, dtype);
+                });
             return;
         }
         
-        // Check if it's a struct type
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT) {
-            // Get the struct type definition
             auto struct_type = tac_gen.get_struct_type(decl->var_type->struct_name);
             if (!struct_type) {
                 std::cerr << "Error: Unknown struct type: " << decl->var_type->struct_name << std::endl;
                 return;
             }
             
-            // Expand the struct into individual field variables
-            // For struct Point p1, create: p1.x and p1.y
             for (const auto& field : struct_type->struct_fields) {
                 std::string field_var_name = decl->name + "." + std::get<0>(field);
                 DATA_TYPE field_type = std::get<1>(field);
                 auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
-                
-                // Don't link yet for local variables (will be linked as part of statement generation)
-                // For global variables, this will be handled by the caller
             }
-            
-            // Note: We don't create a variable for the struct itself in TAC
-            // The struct variable only exists at the AST level
             return;
         }
         
-        // For non-struct types, normal variable declaration
         DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
         auto var_tac = tac_gen.declare_var(decl->name, dtype);
         
-        // Only handle initialization if there's an init value and we're in a function context
         if (decl->init_value && current_function) {
             auto init_exp = generate_expression(decl->init_value);
             auto var_sym = tac_gen.get_var(decl->name);
             auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
-            // This assignment TAC will be part of the function body
         }
     }
 
@@ -191,14 +173,14 @@ namespace twlm::ccpl::modules
     }
 
     void ASTToTACGenerator::extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields){
-        // Handle array fields
         if (field->var_type && field->var_type->kind == TypeKind::ARRAY) {
-            // Expand array fields into individual elements
-            expand_struct_array_field(field->var_type, field->name, fields);
+            expand_array_elements(field->var_type, field->name,
+                [&fields](const std::string& name, DATA_TYPE dtype) {
+                    fields.push_back({name, dtype});
+                });
             return;
         }
         
-        // Handle struct fields
         if(field->var_type && field->var_type->kind==TypeKind::STRUCT){
             auto struct_type = tac_gen.get_struct_type(field->var_type->struct_name);
             if(struct_type){
@@ -213,23 +195,52 @@ namespace twlm::ccpl::modules
         }
     }
 
+    void ASTToTACGenerator::expand_array_elements(std::shared_ptr<Type> array_type, 
+                                                   const std::string& base_name,
+                                                   std::function<void(const std::string&, DATA_TYPE)> handler) {
+        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
+        
+        int array_size = array_type->array_size;
+        auto element_type = array_type->base_type;
+        
+        for (int i = 0; i < array_size; ++i) {
+            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
+            
+            if (element_type->kind == TypeKind::ARRAY) {
+                expand_array_elements(element_type, elem_name, handler);
+            } else if (element_type->kind == TypeKind::STRUCT) {
+                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
+                if (struct_type) {
+                    for (const auto& field : struct_type->struct_fields) {
+                        std::string field_name = elem_name + "." + std::get<0>(field);
+                        DATA_TYPE field_type = std::get<1>(field);
+                        handler(field_name, field_type);
+                    }
+                }
+            } else {
+                DATA_TYPE dtype = convert_type_to_data_type(element_type);
+                handler(elem_name, dtype);
+            }
+        }
+    }
+
     void ASTToTACGenerator::generate_struct_decl(std::shared_ptr<StructDecl> decl) {
         if (!decl) return;
         
-        // Extract field information
         std::vector<std::pair<std::string, DATA_TYPE>> fields;
         for (const auto& field : decl->fields) {
-            // Handle array fields
             if (field->var_type && field->var_type->kind == TypeKind::ARRAY) {
-                expand_struct_array_field(field->var_type, field->name, fields);
+                expand_array_elements(field->var_type, field->name,
+                    [&fields](const std::string& name, DATA_TYPE dtype) {
+                        fields.push_back({name, dtype});
+                    });
                 continue;
             }
             
             DATA_TYPE field_type = convert_type_to_data_type(field->var_type);
             if(field_type==DATA_TYPE::STRUCT){
-                // Handle nested struct types
                 extract_struct_fields(field, fields);
-                continue;// Skip adding the original field ()
+                continue;
             }
             fields.push_back({field->name, field_type});
         }
@@ -244,22 +255,20 @@ namespace twlm::ccpl::modules
         
         switch (stmt->kind) {
             case ASTNodeKind::VAR_DECL: {
-                // Local variable declaration
                 auto var_decl = std::dynamic_pointer_cast<VarDecl>(stmt);
                 
-                // Check if it's an array type
                 if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY) {
-                    // Use the helper function to recursively expand multi-dimensional arrays
                     std::shared_ptr<TAC> result_tac = nullptr;
-                    expand_local_array_decl(var_decl->var_type, var_decl->name, result_tac);
+                    expand_array_elements(var_decl->var_type, var_decl->name,
+                        [this, &result_tac](const std::string& name, DATA_TYPE dtype) {
+                            auto elem_tac = tac_gen.declare_var(name, dtype);
+                            result_tac = tac_gen.join_tac(result_tac, elem_tac);
+                        });
                     return result_tac;
                 }
-                // Check if it's a struct type
                 else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
-                    // Get the struct type definition
                     auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
                     if (struct_type) {
-                        // Expand the struct into individual field variables
                         std::shared_ptr<TAC> result_tac = nullptr;
                         for (const auto& field : struct_type->struct_fields) {
                             std::string field_var_name = var_decl->name + "." + std::get<0>(field);
@@ -268,8 +277,6 @@ namespace twlm::ccpl::modules
                             result_tac = tac_gen.join_tac(result_tac, field_var_tac);
                         }
                         
-                        // Handle initialization if present
-                        // Note: struct initialization would need special handling
                         if (var_decl->init_value) {
                             std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
                         }
@@ -277,11 +284,9 @@ namespace twlm::ccpl::modules
                         return result_tac;
                     }
                 } else {
-                    // Normal variable
                     DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
                     auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
                     
-                    // Handle initialization
                     if (var_decl->init_value) {
                         auto init_exp = generate_expression(var_decl->init_value);
                         auto var_sym = tac_gen.get_var(var_decl->name);
@@ -700,8 +705,6 @@ namespace twlm::ccpl::modules
         return nullptr;
     }
 
-    // ============ Helper Functions ============
-
     DATA_TYPE ASTToTACGenerator::convert_type_to_data_type(std::shared_ptr<Type> type) {
         if (!type) return DATA_TYPE::UNDEF;
         
@@ -729,7 +732,6 @@ namespace twlm::ccpl::modules
         
         if (exprs.empty()) return nullptr;
         
-        // Build the linked list in reverse order
         std::shared_ptr<EXP> result = nullptr;
         for (auto it = exprs.rbegin(); it != exprs.rend(); ++it) {
             auto exp = generate_expression(*it);
@@ -740,120 +742,6 @@ namespace twlm::ccpl::modules
         }
         
         return result;
-    }
-
-    void ASTToTACGenerator::expand_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name) {
-        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
-        
-        int array_size = array_type->array_size;
-        auto element_type = array_type->base_type;
-        
-        // For each array element
-        for (int i = 0; i < array_size; ++i) {
-            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
-            
-            // Check if the element type is also an array (multi-dimensional)
-            if (element_type->kind == TypeKind::ARRAY) {
-                // Recursively expand nested arrays
-                expand_array_decl(element_type, elem_name);
-            }
-            // Check if the element type is a struct
-            else if (element_type->kind == TypeKind::STRUCT) {
-                // Get the struct type definition
-                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
-                if (struct_type) {
-                    // Expand struct fields for each array element
-                    for (const auto& field : struct_type->struct_fields) {
-                        std::string field_name = elem_name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        auto field_var_tac = tac_gen.declare_var(field_name, field_type);
-                    }
-                }
-            }
-            // Otherwise, it's a basic type
-            else {
-                DATA_TYPE dtype = convert_type_to_data_type(element_type);
-                auto elem_var_tac = tac_gen.declare_var(elem_name, dtype);
-            }
-        }
-    }
-
-    void ASTToTACGenerator::expand_struct_array_field(std::shared_ptr<Type> array_type, 
-                                                       const std::string& base_name,
-                                                       std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
-        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
-        
-        int array_size = array_type->array_size;
-        auto element_type = array_type->base_type;
-        
-        // For each array element
-        for (int i = 0; i < array_size; ++i) {
-            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
-            
-            // Check if the element type is also an array (multi-dimensional)
-            if (element_type->kind == TypeKind::ARRAY) {
-                // Recursively expand nested arrays
-                expand_struct_array_field(element_type, elem_name, fields);
-            }
-            // Check if the element type is a struct
-            else if (element_type->kind == TypeKind::STRUCT) {
-                // Get the struct type definition
-                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
-                if (struct_type) {
-                    // Expand struct fields for each array element
-                    for (const auto& field : struct_type->struct_fields) {
-                        std::string field_name = elem_name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        fields.push_back({field_name, field_type});
-                    }
-                }
-            }
-            // Otherwise, it's a basic type
-            else {
-                DATA_TYPE dtype = convert_type_to_data_type(element_type);
-                fields.push_back({elem_name, dtype});
-            }
-        }
-    }
-
-    void ASTToTACGenerator::expand_local_array_decl(std::shared_ptr<Type> array_type, 
-                                                     const std::string& base_name,
-                                                     std::shared_ptr<TAC>& result_tac) {
-        if (!array_type || array_type->kind != TypeKind::ARRAY) return;
-        
-        int array_size = array_type->array_size;
-        auto element_type = array_type->base_type;
-        
-        // For each array element
-        for (int i = 0; i < array_size; ++i) {
-            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
-            
-            // Check if the element type is also an array (multi-dimensional)
-            if (element_type->kind == TypeKind::ARRAY) {
-                // Recursively expand nested arrays
-                expand_local_array_decl(element_type, elem_name, result_tac);
-            }
-            // Check if the element type is a struct
-            else if (element_type->kind == TypeKind::STRUCT) {
-                // Get the struct type definition
-                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
-                if (struct_type) {
-                    // Expand struct fields for each array element
-                    for (const auto& field : struct_type->struct_fields) {
-                        std::string field_name = elem_name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        auto field_var_tac = tac_gen.declare_var(field_name, field_type);
-                        result_tac = tac_gen.join_tac(result_tac, field_var_tac);
-                    }
-                }
-            }
-            // Otherwise, it's a basic type
-            else {
-                DATA_TYPE dtype = convert_type_to_data_type(element_type);
-                auto elem_tac = tac_gen.declare_var(elem_name, dtype);
-                result_tac = tac_gen.join_tac(result_tac, elem_tac);
-            }
-        }
     }
 
 } // namespace twlm::ccpl::modules
