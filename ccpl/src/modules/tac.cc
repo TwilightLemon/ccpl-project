@@ -881,3 +881,60 @@ std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_
     
     return nullptr;
 }
+
+// ============ Pointer Operations ============
+
+std::shared_ptr<EXP> TACGenerator::do_address_of(std::shared_ptr<EXP> exp) {
+    if (!exp || !exp->place) {
+        error("Invalid expression for address-of operation");
+        return nullptr;
+    }
+    
+    // Address-of operation: &var
+    // Result type is INT (pointer)
+    auto temp = mk_tmp(DATA_TYPE::INT);
+    auto temp_decl = mk_tac(TAC_OP::VAR, temp);
+    temp_decl->prev = exp->code;
+    
+    auto addr_tac = mk_tac(TAC_OP::ADDR, temp, exp->place);
+    addr_tac->prev = temp_decl;
+    
+    auto result = mk_exp(temp, addr_tac);
+    result->data_type = DATA_TYPE::INT; // Pointer type represented as INT
+    return result;
+}
+
+std::shared_ptr<EXP> TACGenerator::do_dereference(std::shared_ptr<EXP> exp) {
+    if (!exp || !exp->place) {
+        error("Invalid expression for dereference operation");
+        return nullptr;
+    }
+    
+    // Dereference operation: *ptr
+    // We need to load the value from the address stored in ptr
+    auto temp = mk_tmp(DATA_TYPE::INT); // Assume dereferenced type is INT for now
+    auto temp_decl = mk_tac(TAC_OP::VAR, temp);
+    temp_decl->prev = exp->code;
+    
+    auto deref_tac = mk_tac(TAC_OP::LOAD_PTR, temp, exp->place);
+    deref_tac->prev = temp_decl;
+    
+    auto result = mk_exp(temp, deref_tac);
+    result->data_type = DATA_TYPE::INT; // For simplicity, assume INT
+    return result;
+}
+
+std::shared_ptr<TAC> TACGenerator::do_pointer_assign(std::shared_ptr<EXP> ptr_exp, 
+                                                      std::shared_ptr<EXP> value_exp) {
+    if (!ptr_exp || !ptr_exp->place || !value_exp || !value_exp->place) {
+        error("Invalid pointer assignment");
+        return nullptr;
+    }
+    
+    // *ptr = value
+    auto code = join_tac(ptr_exp->code, value_exp->code);
+    auto store_tac = mk_tac(TAC_OP::STORE_PTR, ptr_exp->place, value_exp->place);
+    store_tac->prev = code;
+    
+    return store_tac;
+}

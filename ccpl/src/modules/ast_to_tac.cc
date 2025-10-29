@@ -87,6 +87,8 @@ namespace twlm::ccpl::modules
         if (!decl) return;
         
         if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY) {
+            // For array declaration, expand array elements for storage
+            // Array name will decay to pointer automatically when used
             expand_array_elements(decl->var_type, decl->name,
                 [this](const std::string& name, DATA_TYPE dtype) {
                     tac_gen.declare_var(name, dtype);
@@ -259,11 +261,17 @@ namespace twlm::ccpl::modules
                 
                 if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY) {
                     std::shared_ptr<TAC> result_tac = nullptr;
+                    
+                    // Expand and declare array elements
                     expand_array_elements(var_decl->var_type, var_decl->name,
                         [this, &result_tac](const std::string& name, DATA_TYPE dtype) {
                             auto elem_tac = tac_gen.declare_var(name, dtype);
                             result_tac = tac_gen.join_tac(result_tac, elem_tac);
                         });
+                    
+                    // Note: Array name will decay to pointer (&arr[0]) automatically
+                    // when used in expressions, so we don't need to create a separate variable
+                    
                     return result_tac;
                 }
                 else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT) {
@@ -522,20 +530,30 @@ namespace twlm::ccpl::modules
         
         auto var = tac_gen.get_var(expr->name);
         
+        // If variable is found, just return it
+        if (var) {
+            auto exp = tac_gen.mk_exp(var, nullptr);
+            exp->data_type = var->data_type;
+            return exp;
+        }
+        
         // If variable is not found, check if it's an array (try name[0])
-        if (!var) {
-            auto first_elem = tac_gen.get_var(expr->name + "[0]");
-            if (first_elem) {
-                // This is an array reference, use the first element as base address
-                var = first_elem;
+        // In this case, the array name itself is a pointer variable
+        // But for backward compatibility, we also check for array elements
+        auto first_elem = tac_gen.get_var(expr->name + "[0]");
+        if (first_elem) {
+            // This identifier refers to an array
+            // The array name should exist as a pointer variable
+            var = tac_gen.get_var(expr->name);
+            if (var) {
+                auto exp = tac_gen.mk_exp(var, nullptr);
+                exp->data_type = DATA_TYPE::INT; // Pointer type
+                return exp;
             }
         }
         
-        auto exp = tac_gen.mk_exp(var, nullptr);
-        if (var) {
-            exp->data_type = var->data_type;
-        }
-        return exp;
+        std::cerr << "Error: Variable not found: " << expr->name << std::endl;
+        return nullptr;
     }
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_binary_op(std::shared_ptr<BinaryOpExpr> expr) {
@@ -608,7 +626,25 @@ namespace twlm::ccpl::modules
             
             // Normal identifier assignment (not array)
             auto var = tac_gen.get_var(id_expr->name);
-            auto value_exp = generate_expression(expr->value);
+            
+            // Check if the value is an array name (identifier that should be treated as pointer)
+            std::shared_ptr<EXP> value_exp;
+            if (expr->value->kind == ASTNodeKind::IDENTIFIER) {
+                auto value_id = std::dynamic_pointer_cast<IdentifierExpr>(expr->value);
+                // Check if this identifier is an array by seeing if name[0] exists
+                auto first_elem = tac_gen.get_var(value_id->name + "[0]");
+                if (first_elem) {
+                    // This is an array name, convert to &array[0]
+                    // This implements the array-to-pointer decay
+                    auto addr_exp = tac_gen.mk_exp(first_elem, nullptr);
+                    value_exp = tac_gen.do_address_of(addr_exp);
+                } else {
+                    value_exp = generate_expression(expr->value);
+                }
+            } else {
+                value_exp = generate_expression(expr->value);
+            }
+            
             auto assign_tac = tac_gen.do_assign(var, value_exp);
             return tac_gen.mk_exp(var, assign_tac);
         }
@@ -660,7 +696,31 @@ namespace twlm::ccpl::modules
             return tac_gen.mk_exp(target_exp->place, combined_tac);
         }
         
-        // For other complex targets (dereference, etc.)
+        // For dereference assignment: *ptr = value
+        if (expr->target->kind == ASTNodeKind::DEREFERENCE) {
+            auto deref_expr = std::dynamic_pointer_cast<DereferenceExpr>(expr->target);
+            
+            // Generate the pointer expression
+            auto ptr_exp = generate_expression(deref_expr->operand);
+            if (!ptr_exp || !ptr_exp->place) {
+                std::cerr << "Error: Invalid pointer for dereference assignment" << std::endl;
+                return nullptr;
+            }
+            
+            // Generate the value expression
+            auto value_exp = generate_expression(expr->value);
+            if (!value_exp) {
+                return nullptr;
+            }
+            
+            // Generate pointer assignment: *ptr = value
+            auto assign_tac = tac_gen.do_pointer_assign(ptr_exp, value_exp);
+            
+            // Return expression with the value as result
+            return tac_gen.mk_exp(value_exp->place, assign_tac);
+        }
+        
+        // For other complex targets
         std::cerr << "Warning: Complex assignment targets not yet fully supported" << std::endl;
         return nullptr;
     }
@@ -722,10 +782,38 @@ namespace twlm::ccpl::modules
             }
         }
         
-        // For non-constant indices, we would need runtime address computation
-        // This is not yet implemented in the TAC system
-        std::cerr << "Warning: Non-constant array indices not yet supported in TAC generation" << std::endl;
-        return nullptr;
+        // For non-constant indices, use runtime address computation
+        // arr[i] is equivalent to *(arr + i*sizeof(element))
+        // Since we store everything as 4-byte values, sizeof(element) = 4
+        
+        // Generate the base expression (should be a pointer or array name)
+        auto base_exp = generate_expression(expr->array);
+        if (!base_exp || !base_exp->place) {
+            std::cerr << "Error: Failed to generate base array expression" << std::endl;
+            return nullptr;
+        }
+        
+        // Generate the index expression
+        auto index_exp = generate_expression(expr->index);
+        if (!index_exp || !index_exp->place) {
+            std::cerr << "Error: Failed to generate index expression" << std::endl;
+            return nullptr;
+        }
+        
+        // Calculate offset: index * 4 (since each element is 4 bytes)
+        auto four_const = tac_gen.mk_const(4);
+        auto four_exp = tac_gen.mk_exp(four_const, nullptr);
+        four_exp->data_type = DATA_TYPE::INT;
+        
+        auto offset_exp = tac_gen.do_bin(TAC_OP::MUL, index_exp, four_exp);
+        
+        // Calculate address: base + offset
+        auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_exp, offset_exp);
+        
+        // Dereference the address to get the value
+        auto result_exp = tac_gen.do_dereference(addr_exp);
+        
+        return result_exp;
     }
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_member_access(std::shared_ptr<MemberAccessExpr> expr) {
@@ -750,17 +838,29 @@ namespace twlm::ccpl::modules
     std::shared_ptr<EXP> ASTToTACGenerator::generate_address_of(std::shared_ptr<AddressOfExpr> expr) {
         if (!expr) return nullptr;
         
-        // Address-of would require extending TAC with pointer operations
-        std::cerr << "Warning: Address-of operator not yet fully supported in TAC generation" << std::endl;
-        return nullptr;
+        // Generate the operand expression
+        auto operand_exp = generate_expression(expr->operand);
+        if (!operand_exp || !operand_exp->place) {
+            std::cerr << "Error: Invalid operand for address-of operation" << std::endl;
+            return nullptr;
+        }
+        
+        // Use TAC generator to create address-of operation
+        return tac_gen.do_address_of(operand_exp);
     }
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_dereference(std::shared_ptr<DereferenceExpr> expr) {
         if (!expr) return nullptr;
         
-        // Dereference would require extending TAC with pointer operations
-        std::cerr << "Warning: Dereference operator not yet fully supported in TAC generation" << std::endl;
-        return nullptr;
+        // Generate the operand expression (should be a pointer)
+        auto operand_exp = generate_expression(expr->operand);
+        if (!operand_exp || !operand_exp->place) {
+            std::cerr << "Error: Invalid operand for dereference operation" << std::endl;
+            return nullptr;
+        }
+        
+        // Use TAC generator to create dereference operation
+        return tac_gen.do_dereference(operand_exp);
     }
 
     DATA_TYPE ASTToTACGenerator::convert_type_to_data_type(std::shared_ptr<Type> type) {

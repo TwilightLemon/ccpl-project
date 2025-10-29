@@ -23,7 +23,7 @@
 
 %token EOL
 %token INT CHAR VOID STRUCT
-%token EQ NE LT LE GT GE UMINUS
+%token EQ NE LT LE GT GE UMINUS DEREF
 %token IF ELSE FOR WHILE INPUT OUTPUT RETURN
 %token BREAK CONTINUE
 %token SWITCH CASE DEFAULT
@@ -46,15 +46,15 @@
 %type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr
 %type <std::vector<std::shared_ptr<Expression>>> arg_list arg_list_nonempty
 
-%type <std::shared_ptr<Type>> type_spec declarator direct_declarator pointer
+%type <std::shared_ptr<Type>> type_spec 
 %type <std::string> func_name
 %type <std::pair<std::shared_ptr<Type>, std::string>> var_declarator
 
 %right '='
-%right UMINUS
 %left EQ NE LT LE GT GE
 %left '+' '-'
 %left '*' '/'
+%right UMINUS '&' DEREF
 
 %%
 
@@ -160,43 +160,14 @@ type_spec: INT
 }
 ;
 
-declarator: pointer direct_declarator
-{
-    $$ = ast_builder.make_pointer_type($2);
-}
-| direct_declarator
-{
-    $$ = $1;
-}
-;
-
-pointer: '*'
-{
-    $$ = ast_builder.get_current_type();
-}
-| '*' pointer
-{
-    $$ = ast_builder.make_pointer_type($2);
-}
-;
-
-direct_declarator: IDENTIFIER
-{
-    $$ = ast_builder.get_current_type();
-}
-| '(' declarator ')'
-{
-    $$ = $2;
-}
-| direct_declarator '[' INTEGER ']'
-{
-    $$ = ast_builder.make_array_type($1, $3);
-}
-;
-
 var_declarator: IDENTIFIER
 {
     $$ = std::make_pair(ast_builder.get_current_type(), $1);
+}
+| '*' var_declarator
+{
+    auto pointer_type = ast_builder.make_pointer_type($2.first);
+    $$ = std::make_pair(pointer_type, $2.second);
 }
 | IDENTIFIER '[' INTEGER ']'
 {
@@ -247,6 +218,11 @@ param_decl_list: param_decl
 param_decl: type_spec IDENTIFIER
 {
     $$ = ast_builder.make_param_decl($1, $2);
+}
+| type_spec '*' IDENTIFIER
+{
+    auto pointer_type = ast_builder.make_pointer_type($1);
+    $$ = ast_builder.make_param_decl(pointer_type, $3);
 }
 ;
 
@@ -489,6 +465,21 @@ expression: const_expr
 | '-' expression %prec UMINUS
 {
     $$ = ast_builder.make_unary_op(TAC_OP::NEG, $2);
+}
+| '&' expression %prec DEREF
+{
+    $$ = ast_builder.make_address_of($2);
+}
+| '*' IDENTIFIER %prec DEREF
+{
+    auto id = ast_builder.make_identifier($2);
+    $$ = ast_builder.make_dereference(id);
+}
+| '*' IDENTIFIER '=' expression
+{
+    auto id = ast_builder.make_identifier($2);
+    auto deref = ast_builder.make_dereference(id);
+    $$ = ast_builder.make_assign(deref, $4);
 }
 | '(' expression ')'
 {

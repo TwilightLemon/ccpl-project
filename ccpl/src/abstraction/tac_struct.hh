@@ -179,6 +179,15 @@ namespace twlm::ccpl::abstraction
             case TAC_OP::ENDFUNC:
                 oss << "end";
                 break;
+            case TAC_OP::ADDR:
+                oss << a->to_string() << " = &" << b->to_string();
+                break;
+            case TAC_OP::LOAD_PTR:
+                oss << a->to_string() << " = *" << b->to_string();
+                break;
+            case TAC_OP::STORE_PTR:
+                oss << "*" << a->to_string() << " = " << b->to_string();
+                break;
             default:
                 oss << "undef";
                 break;

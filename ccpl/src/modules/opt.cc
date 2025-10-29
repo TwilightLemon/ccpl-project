@@ -158,8 +158,13 @@ bool TACOptimizer::constant_propagation(std::shared_ptr<TAC> tac)
     while (current != nullptr)
     {
         // 先替换使用处的变量为常量
-        // 替换 b 操作数
-        if (current->b && current->b->type == SYM_TYPE::VAR)
+        // 但是对于指针操作（ADDR, LOAD_PTR, STORE_PTR），不能进行常量传播
+        bool is_pointer_op = (current->op == TAC_OP::ADDR || 
+                              current->op == TAC_OP::LOAD_PTR || 
+                              current->op == TAC_OP::STORE_PTR);
+        
+        // 替换 b 操作数（但不替换ADDR的操作数）
+        if (current->b && current->b->type == SYM_TYPE::VAR && !is_pointer_op)
         {
             auto it = const_map.find(current->b);
             if (it != const_map.end())
@@ -170,7 +175,7 @@ bool TACOptimizer::constant_propagation(std::shared_ptr<TAC> tac)
         }
 
         // 替换 c 操作数
-        if (current->c && current->c->type == SYM_TYPE::VAR)
+        if (current->c && current->c->type == SYM_TYPE::VAR && !is_pointer_op)
         {
             auto it = const_map.find(current->c);
             if (it != const_map.end())
@@ -222,7 +227,8 @@ bool TACOptimizer::constant_propagation(std::shared_ptr<TAC> tac)
                   current->op == TAC_OP::EQ || current->op == TAC_OP::NE ||
                   current->op == TAC_OP::LT || current->op == TAC_OP::LE ||
                   current->op == TAC_OP::GT || current->op == TAC_OP::GE ||
-                  current->op == TAC_OP::CALL || current->op == TAC_OP::INPUT))
+                  current->op == TAC_OP::CALL || current->op == TAC_OP::INPUT ||
+                  current->op == TAC_OP::ADDR || current->op == TAC_OP::LOAD_PTR))
         {
             const_map.erase(current->a);
         }
@@ -256,8 +262,12 @@ bool TACOptimizer::copy_propagation(std::shared_ptr<TAC> tac)
         }
 
         // 替换使用处
+        // 但是对于指针操作（ADDR, LOAD_PTR, STORE_PTR），不能进行拷贝传播
+        bool is_pointer_op = (current->op == TAC_OP::ADDR || 
+                              current->op == TAC_OP::LOAD_PTR || 
+                              current->op == TAC_OP::STORE_PTR);
 
-        if (current->b && current->b->type == SYM_TYPE::VAR)
+        if (current->b && current->b->type == SYM_TYPE::VAR && !is_pointer_op)
         {
             auto it = copy_map.find(current->b);
             if (it != copy_map.end())
@@ -267,7 +277,7 @@ bool TACOptimizer::copy_propagation(std::shared_ptr<TAC> tac)
             }
         }
 
-        if (current->c && current->c->type == SYM_TYPE::VAR)
+        if (current->c && current->c->type == SYM_TYPE::VAR && !is_pointer_op)
         {
             auto it = copy_map.find(current->c);
             if (it != copy_map.end())

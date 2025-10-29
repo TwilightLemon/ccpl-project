@@ -114,6 +114,11 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> do_bin(TAC_OP op, std::shared_ptr<EXP> exp1, std::shared_ptr<EXP> exp2);
         std::shared_ptr<EXP> do_un(TAC_OP op, std::shared_ptr<EXP> exp);
         std::shared_ptr<EXP> do_call_ret(const std::string &name, std::shared_ptr<EXP> arglist);
+        
+        // Pointer operations
+        std::shared_ptr<EXP> do_address_of(std::shared_ptr<EXP> exp);
+        std::shared_ptr<EXP> do_dereference(std::shared_ptr<EXP> exp);
+        std::shared_ptr<TAC> do_pointer_assign(std::shared_ptr<EXP> ptr_exp, std::shared_ptr<EXP> value_exp);
 
         // Scope management
         void enter_scope();

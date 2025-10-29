@@ -77,6 +77,9 @@ namespace twlm::ccpl::abstraction
         CALL,      // a = call b
         RETURN,    // return a
         INPUT,     // input a
-        OUTPUT     // output a
+        OUTPUT,    // output a
+        ADDR,      // a = &b (address of)
+        LOAD_PTR,  // a = *b (load from pointer)
+        STORE_PTR  // *a = b (store to pointer)
     };
 }
