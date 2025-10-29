@@ -5,7 +5,6 @@
 #define SYM_TEXT 3
 #define SYM_INT 4
 #define SYM_LABEL 5
-#define SYM_CHAR 6
 
 /* type of tac */ 
 #define TAC_UNDEF 0 /* undefine */
@@ -41,7 +40,6 @@ typedef struct sym
 		type:SYM_VAR name:bcd value:99 offset:4
 		type:SYM_LABEL name:L1/max			
 		type:SYM_INT value:1			
-		type:SYM_CHAR value:'c'			
 		type:SYM_FUNC name:max address:1234		
 		type:SYM_TEXT name:"hello" label:10
 	*/
@@ -88,12 +86,10 @@ TAC *join_tac(TAC *c1, TAC *c2);
 void out_str(FILE *f, const char *format, ...);
 void out_sym(FILE *f, SYM *s);
 void out_tac(FILE *f, TAC *i);
-
 SYM *mk_label(char *name);
 SYM *mk_tmp(void);
 SYM *mk_const(int n);
 SYM *mk_text(char *text);
-
 TAC *mk_tac(int op, SYM *a, SYM *b, SYM *c);
 EXP *mk_exp(EXP *next, SYM *ret, TAC *code);
 char *mk_lstr(int i);

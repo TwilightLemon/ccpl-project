@@ -399,7 +399,7 @@ void asm_code(TAC *c)
 
 		case TAC_INPUT:
 		r=reg_alloc(c->a);
-		out_str(file_s, "	IN\n");
+		out_str(file_s, "	ITI\n");
 		out_str(file_s, "	LOD R%u,R15\n", r);
 		rdesc[r].mod = MODIFIED;
 		return;
@@ -409,12 +409,12 @@ void asm_code(TAC *c)
 		{
 			r=reg_alloc(c->a);
 			out_str(file_s, "	LOD R15,R%u\n", r);
-			out_str(file_s, "	OUTN\n");
+			out_str(file_s, "	OTI\n");
 		} else if(c->a->type == SYM_TEXT)
 		{
 			r=reg_alloc(c->a);
 			out_str(file_s, "	LOD R15,R%u\n", r);
-			out_str(file_s, "	OUTS\n");
+			out_str(file_s, "	OTS\n");
 		}
 		return;
 

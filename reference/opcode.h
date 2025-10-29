@@ -1,20 +1,28 @@
 /* opcode of machine instruction */
 #define  I_END	  0x00
 #define  I_NOP    0x01
-#define  I_OUT_C    0x02
-#define  I_IN     0x03
-#define  I_OUT_N  0x04
-#define  I_OUT_S  0x05
+#define  I_OTC    0x02
+#define  I_OTI    0x03
+#define  I_OTS    0x04
+#define  I_ITC    0x05
+#define  I_ITI    0x06
 #define  I_LOD_0  0x10
 #define  I_LOD_1  0x11
 #define  I_LOD_2  0x12
 #define  I_LOD_3  0x13
+#define  I_LDC_3  0x113
 #define  I_LOD_4  0x14
+#define  I_LDC_4  0x114
 #define  I_LOD_5  0x15
+#define  I_LDC_5  0x115
 #define  I_STO_0  0x20
+#define  I_STC_0  0x120
 #define  I_STO_1  0x21
+#define  I_STC_1  0x121
 #define  I_STO_2  0x22
+#define  I_STC_2  0x122
 #define  I_STO_3  0x23
+#define  I_STC_3  0x123
 #define  I_ADD_0  0x30
 #define  I_ADD_1  0x31
 #define  I_SUB_0  0x40
@@ -32,5 +40,3 @@
 #define  I_JLZ_1  0x85
 #define  I_JGZ_0  0x86
 #define  I_JGZ_1  0x87
-#define  I_MAX    0xFF
-

@@ -865,10 +865,10 @@ std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
     struct_sym->name = name;
     struct_sym->scope = SYM_SCOPE::GLOBAL;
     
-    // Store field information
+    // Store field information with preserved order
     int offset = 0;
     for (const auto& field : fields) {
-        struct_sym->struct_fields[field.first] = {field.second, offset};
+        struct_sym->struct_fields.push_back({field.first, field.second, offset});
         offset += 4;  // Simplified: each field takes 4 bytes
     }
     

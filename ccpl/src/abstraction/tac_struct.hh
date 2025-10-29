@@ -31,7 +31,7 @@ namespace twlm::ccpl::abstraction
 
         // For struct types
         std::string struct_type_name;       // Name of struct type (if this is a struct variable)
-        std::unordered_map<std::string, std::pair<DATA_TYPE, int>> struct_fields; // field_name -> (type, offset)
+        std::vector<std::tuple<std::string, DATA_TYPE, int>> struct_fields; // (field_name, type, offset) - preserves order
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),

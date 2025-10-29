@@ -204,4 +204,4 @@ namespace twlm::ccpl::abstraction
         return oss.str();
     }
 
-} // namespace twlm::ccpl::abstraction
+}

@@ -79,6 +79,10 @@ namespace twlm::ccpl::modules
         // Helper to expand array declarations into individual element variables
         void expand_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name);
         
+        // Helper to expand local array declarations (returns TAC code)
+        void expand_local_array_decl(std::shared_ptr<Type> array_type, const std::string& base_name, 
+                                     std::shared_ptr<TAC>& result_tac);
+        
         // Helper to expand array fields in struct definitions
         void expand_struct_array_field(std::shared_ptr<Type> array_type, const std::string& base_name, 
                                        std::vector<std::pair<std::string, DATA_TYPE>>& fields);
