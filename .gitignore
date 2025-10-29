@@ -1,3 +1,4 @@
 /ccpl/build/*
-/ccpl/output/*
+/ccpl/test/*.s
 /.vscode/settings.json
+/asm-machine/build/*

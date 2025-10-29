@@ -632,6 +632,10 @@ void ObjGenerator::generate()
     // Generate assembly header
     asm_head();
 
+    // Jump to main function to ensure correct program entry
+    output << "\n\t# Jump to main\n";
+    output << "\tJMP main\n";
+
     // Translate TAC to assembly
     auto cur = tac_gen.get_tac_first();
     while (cur != nullptr)
