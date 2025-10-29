@@ -521,6 +521,16 @@ namespace twlm::ccpl::modules
         if (!expr) return nullptr;
         
         auto var = tac_gen.get_var(expr->name);
+        
+        // If variable is not found, check if it's an array (try name[0])
+        if (!var) {
+            auto first_elem = tac_gen.get_var(expr->name + "[0]");
+            if (first_elem) {
+                // This is an array reference, use the first element as base address
+                var = first_elem;
+            }
+        }
+        
         auto exp = tac_gen.mk_exp(var, nullptr);
         if (var) {
             exp->data_type = var->data_type;
@@ -549,6 +559,54 @@ namespace twlm::ccpl::modules
         // For simple identifier assignment
         if (expr->target->kind == ASTNodeKind::IDENTIFIER) {
             auto id_expr = std::dynamic_pointer_cast<IdentifierExpr>(expr->target);
+            
+            // Special case: assigning a string literal to a char array
+            if (expr->value->kind == ASTNodeKind::STRING_LITERAL) {
+                auto string_literal = std::dynamic_pointer_cast<StringLiteralExpr>(expr->value);
+                
+                // Check if the target is an array by checking if name[0] exists
+                auto first_elem = tac_gen.get_var(id_expr->name + "[0]");
+                if (first_elem) {
+                    // This is an array assignment
+                    std::shared_ptr<TAC> assign_tac = nullptr;
+                    std::shared_ptr<SYM> last_var = nullptr;
+                    
+                    // Assign each character to the corresponding array element
+                    for (size_t i = 0; i < string_literal->value.length(); ++i) {
+                        std::string elem_name = id_expr->name + "[" + std::to_string(i) + "]";
+                        auto elem_var = tac_gen.get_var(elem_name);
+                        if (!elem_var) {
+                            std::cerr << "Error: Array element not found: " << elem_name << std::endl;
+                            break;
+                        }
+                        
+                        // Create a constant for this character
+                        auto char_sym = tac_gen.mk_const_char(string_literal->value[i]);
+                        auto char_exp = tac_gen.mk_exp(char_sym, nullptr);
+                        
+                        // Generate assignment TAC
+                        auto elem_assign = tac_gen.do_assign(elem_var, char_exp);
+                        assign_tac = tac_gen.join_tac(assign_tac, elem_assign);
+                        last_var = elem_var;
+                    }
+                    
+                    // Add null terminator if there's space
+                    std::string null_elem_name = id_expr->name + "[" + std::to_string(string_literal->value.length()) + "]";
+                    auto null_elem_var = tac_gen.get_var(null_elem_name);
+                    if (null_elem_var) {
+                        auto null_sym = tac_gen.mk_const_char('\0');
+                        auto null_exp = tac_gen.mk_exp(null_sym, nullptr);
+                        auto null_assign = tac_gen.do_assign(null_elem_var, null_exp);
+                        assign_tac = tac_gen.join_tac(assign_tac, null_assign);
+                        last_var = null_elem_var;
+                    }
+                    
+                    // Return expression with the last assigned variable
+                    return tac_gen.mk_exp(last_var, assign_tac);
+                }
+            }
+            
+            // Normal identifier assignment (not array)
             auto var = tac_gen.get_var(id_expr->name);
             auto value_exp = generate_expression(expr->value);
             auto assign_tac = tac_gen.do_assign(var, value_exp);

@@ -23,11 +23,7 @@ namespace twlm::ccpl::modules
         
     public:
         ASTToTACGenerator();
-        
-        // Main entry point
         void generate(std::shared_ptr<Program> program);
-        
-        // Get the generated TAC
         TACGenerator& get_tac_generator() { return tac_gen; }
         
     private:
