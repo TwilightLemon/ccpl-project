@@ -1,14 +1,16 @@
 #include "parser.tab.hh"
 #include "global.hh"
+#include "modules/obj.hh"
 #include <iostream>
+#include <fstream>
 
 twlm::ccpl::modules::ASTBuilder ast_builder;
 
 int main(int argc, char *argv[])
 {
-    if (argc != 2)
+    if (argc < 2 || argc > 3)
     {
-        std::cerr << "Usage: " << argv[0] << " <input_file>" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <input_file> [output_file]" << std::endl;
         return 1;
     }
 
@@ -54,6 +56,38 @@ int main(int argc, char *argv[])
         // twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
         // opt.optimize();
         // tac_gen.print_tac();
+
+        // Generate assembly code
+        std::clog << "=== Assembly Code Generation ===" << std::endl;
+        
+        std::ostream* asm_output;
+        std::ofstream asm_file;
+        
+        if (argc == 3)
+        {
+            // Output to file
+            asm_file.open(argv[2]);
+            if (!asm_file.is_open())
+            {
+                std::cerr << "Error: Cannot open output file " << argv[2] << std::endl;
+                return 1;
+            }
+            asm_output = &asm_file;
+        }
+        else
+        {
+            // Output to stdout
+            asm_output = &std::cout;
+        }
+        
+        twlm::ccpl::modules::ObjGenerator obj_gen(*asm_output, tac_gen);
+        obj_gen.generate();
+        
+        if (asm_file.is_open())
+        {
+            asm_file.close();
+            std::clog << "Assembly code written to " << argv[2] << std::endl;
+        }
 
         return 0;
     }
