@@ -53,9 +53,10 @@ int main(int argc, char *argv[])
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
-        // twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
-        // opt.optimize();
-        // tac_gen.print_tac();
+        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
+        opt.optimize();
+        std::clog << "=== Optimized TAC ===" << std::endl;
+        tac_gen.print_tac(std::clog);
 
         // Generate assembly code
         std::clog << "=== Assembly Code Generation ===" << std::endl;
@@ -88,7 +89,7 @@ int main(int argc, char *argv[])
             asm_file.close();
             std::clog << "Assembly code written to " << argv[2] << std::endl;
         }
-
+        std::clog<<"ccpl tasks completed successfully."<<std::endl;
         return 0;
     }
     catch (const std::exception &e)

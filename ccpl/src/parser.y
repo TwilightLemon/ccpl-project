@@ -52,9 +52,9 @@
 
 %right '='
 %right UMINUS
+%left EQ NE LT LE GT GE
 %left '+' '-'
 %left '*' '/'
-%left EQ NE LT LE GT GE
 
 %%
 

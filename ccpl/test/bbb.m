@@ -4,11 +4,11 @@ int main(){
     a=2;
     a=10;
     a=b=3+4*5;
-    int q,d;
-    q= a+b;
-    d=q/0;
-    if(q>0 + d!=0){
-        return "positive";
+    if(a+b==46){
+        output "yes";
     }
-    return "non-positive";
+    else{
+        output "no";
+    }
+    return 0;
 }
