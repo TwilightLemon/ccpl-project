@@ -538,18 +538,13 @@ namespace twlm::ccpl::modules
         }
         
         // If variable is not found, check if it's an array (try name[0])
-        // In this case, the array name itself is a pointer variable
-        // But for backward compatibility, we also check for array elements
         auto first_elem = tac_gen.get_var(expr->name + "[0]");
         if (first_elem) {
             // This identifier refers to an array
-            // The array name should exist as a pointer variable
-            var = tac_gen.get_var(expr->name);
-            if (var) {
-                auto exp = tac_gen.mk_exp(var, nullptr);
-                exp->data_type = DATA_TYPE::INT; // Pointer type
-                return exp;
-            }
+            // Generate &arr[0] to get the address of the first element
+            auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
+            auto addr_result = tac_gen.do_address_of(first_elem_exp);
+            return addr_result;
         }
         
         std::cerr << "Error: Variable not found: " << expr->name << std::endl;

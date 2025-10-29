@@ -16,8 +16,7 @@ int main() {
     i = 0;
     int *ac;
     while (i < 5) {
-        ac=arr;
-        ac=ac+i*4;
+        ac=arr + i * 4;
         sum = sum + *ac;
         i = i + 1;
     }
