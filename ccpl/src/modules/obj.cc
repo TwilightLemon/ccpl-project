@@ -538,13 +538,17 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::OUTPUT:
-        if (tac->a->type == SYM_TYPE::VAR || 
-            tac->a->type == SYM_TYPE::CONST_INT ||
-            tac->a->type == SYM_TYPE::CONST_CHAR)
+        if (tac->a->type == SYM_TYPE::CONST_INT||
+            (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::INT))
         {
             r = reg_alloc(tac->a);
             output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTI\n";
+        }else  if (tac->a->type == SYM_TYPE::CONST_CHAR ||
+            (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::CHAR )){
+            r = reg_alloc(tac->a);
+            output << "\tLOD R" << R_IO << ",R" << r << "\n";
+            output << "\tOTC\n";
         }
         else if (tac->a->type == SYM_TYPE::TEXT)
         {

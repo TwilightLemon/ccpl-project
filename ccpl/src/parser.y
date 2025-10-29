@@ -32,7 +32,7 @@
 %token <int> INTEGER
 %token <char> CHARACTER
 
-%type <std::shared_ptr<Declaration>> func_decl struct_decl
+%type <std::shared_ptr<Declaration>> func_decl struct_decl decl_item
 %type <std::vector<std::shared_ptr<Declaration>>> decl_list
 
 %type <std::shared_ptr<Statement>> statement block expr_stmt if_stmt input_stmt output_stmt return_stmt switch_stmt while_stmt for_stmt
@@ -68,31 +68,38 @@ program: decl_list
 }
 ;
 
-decl_list: func_decl
+decl_list:decl_item
 {
     $$.push_back($1);
 }
-| struct_decl
-{
-    $$.push_back($1);
-}
-| decl_list func_decl
-{
-    $$ = $1;
-    $$.push_back($2);
-}
-| decl_list struct_decl
+|decl_list decl_item
 {
     $$ = $1;
     $$.push_back($2);
 }
 | decl_list type_spec var_decl_list EOL
 {
-    $$ = $1;
     // global variables
+    $$ = $1;
     for (auto& var_decl : $3) {
         $$.push_back(var_decl);
     }
+}
+| type_spec var_decl_list EOL
+{
+    for (auto& var_decl : $2) {
+        $$.push_back(var_decl);
+    }
+}
+;
+
+decl_item: func_decl
+{
+    $$ = $1;
+}
+| struct_decl
+{
+    $$ = $1;
 }
 ;
 
