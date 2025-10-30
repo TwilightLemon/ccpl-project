@@ -68,8 +68,8 @@ namespace twlm::ccpl::modules
         std::shared_ptr<TAC> join_tac(std::shared_ptr<TAC> c1, std::shared_ptr<TAC> c2);
 
         // Declaration operations
-        std::shared_ptr<TAC> declare_var(const std::string &name, DATA_TYPE dtype);
-        std::shared_ptr<TAC> declare_para(const std::string &name, DATA_TYPE dtype);
+        std::shared_ptr<TAC> declare_var(const std::string &name, DATA_TYPE dtype, bool is_pointer = false);
+        std::shared_ptr<TAC> declare_para(const std::string &name, DATA_TYPE dtype, bool is_pointer = false);
 
         // Statement operations
         std::shared_ptr<TAC> do_func(std::shared_ptr<SYM> func,

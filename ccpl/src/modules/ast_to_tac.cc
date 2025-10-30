@@ -112,7 +112,8 @@ namespace twlm::ccpl::modules
         }
         
         DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
-        auto var_tac = tac_gen.declare_var(decl->name, dtype);
+        bool is_pointer = (decl->var_type && decl->var_type->kind == TypeKind::POINTER);
+        auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer);
         
         if (decl->init_value && current_function) {
             auto init_exp = generate_expression(decl->init_value);
@@ -821,8 +822,8 @@ namespace twlm::ccpl::modules
         }
         
         // For non-constant indices, use runtime address computation
-        // arr[i] is equivalent to *(arr + i*sizeof(element))
-        // Since we store everything as 4-byte values, sizeof(element) = 4
+        // arr[i] is equivalent to *(arr + i)
+        // The pointer arithmetic in do_bin will automatically scale by 4
         
         // Generate the base expression (should be a pointer or array name)
         auto base_exp = generate_expression(expr->array);
@@ -838,15 +839,9 @@ namespace twlm::ccpl::modules
             return nullptr;
         }
         
-        // Calculate offset: index * 4 (since each element is 4 bytes)
-        auto four_const = tac_gen.mk_const(4);
-        auto four_exp = tac_gen.mk_exp(four_const, nullptr);
-        four_exp->data_type = DATA_TYPE::INT;
-        
-        auto offset_exp = tac_gen.do_bin(TAC_OP::MUL, index_exp, four_exp);
-        
-        // Calculate address: base + offset
-        auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_exp, offset_exp);
+        // Calculate address: base + index
+        // The pointer arithmetic will automatically scale the index by 4
+        auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_exp, index_exp);
         
         // Dereference the address to get the value
         auto result_exp = tac_gen.do_dereference(addr_exp);

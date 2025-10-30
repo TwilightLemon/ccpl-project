@@ -12,8 +12,12 @@ int main() {
     output *p;    # 应该输出1
     
     # 指针算术
-    p = p + 4;    # 移到下一个元素(4字节)
+    p = p + 1;    # 移到下一个元素
     output *p;    # 应该输出2
-    
+
+    int ind;
+    ind=2;
+    output arr[ind]; #动态计算偏移
+
     return 0;
 }

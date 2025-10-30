@@ -231,12 +231,15 @@ std::shared_ptr<TAC> TACGenerator::join_tac(std::shared_ptr<TAC> c1, std::shared
     return c2;
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype) {
-    return mk_tac(TAC_OP::VAR, mk_var(name, dtype));
+std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype, bool is_pointer) {
+    auto var = mk_var(name, dtype);
+    var->is_pointer = is_pointer;
+    return mk_tac(TAC_OP::VAR, var);
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_para(const std::string& name, DATA_TYPE dtype) {
+std::shared_ptr<TAC> TACGenerator::declare_para(const std::string& name, DATA_TYPE dtype, bool is_pointer) {
     auto sym = mk_var(name, dtype);
+    sym->is_pointer = is_pointer;
     
     // Add parameter type to current function
     if (current_func != nullptr) {
@@ -283,6 +286,11 @@ std::shared_ptr<TAC> TACGenerator::do_assign(std::shared_ptr<SYM> var, std::shar
     
     // Type checking
     check_assignment_type(var, exp);
+    
+    // Propagate pointer flag from source to destination
+    if (exp->place && exp->place->is_pointer) {
+        var->is_pointer = true;
+    }
     
     auto code = mk_tac(TAC_OP::COPY, var, exp->place);
     code->prev = exp->code;
@@ -562,6 +570,53 @@ std::shared_ptr<EXP> TACGenerator::mk_exp(std::shared_ptr<SYM> place,
 std::shared_ptr<EXP> TACGenerator::do_bin(TAC_OP op, 
                                            std::shared_ptr<EXP> exp1, 
                                            std::shared_ptr<EXP> exp2) {
+    // Handle pointer arithmetic: pointer +/- integer should scale by 4
+    bool is_pointer_arithmetic = false;
+    std::shared_ptr<EXP> pointer_exp = nullptr;
+    std::shared_ptr<EXP> offset_exp = nullptr;
+    
+    if ((op == TAC_OP::ADD || op == TAC_OP::SUB) && exp1->place && exp2->place) {
+        if (exp1->place->is_pointer && !exp2->place->is_pointer) {
+            // pointer + integer or pointer - integer
+            is_pointer_arithmetic = true;
+            pointer_exp = exp1;
+            offset_exp = exp2;
+        } else if (op == TAC_OP::ADD && !exp1->place->is_pointer && exp2->place->is_pointer) {
+            // integer + pointer (only valid for ADD, not SUB)
+            is_pointer_arithmetic = true;
+            pointer_exp = exp2;
+            offset_exp = exp1;
+        }
+    }
+    
+    if (is_pointer_arithmetic) {
+        // Scale the offset by 4 (size of int/pointer in bytes)
+        auto four = mk_const(4);
+        auto four_exp = mk_exp(four, nullptr);
+        
+        // scaled_offset = offset * 4
+        auto scaled_temp = mk_tmp(DATA_TYPE::INT);
+        auto scaled_decl = mk_tac(TAC_OP::VAR, scaled_temp);
+        scaled_decl->prev = join_tac(pointer_exp->code, offset_exp->code);
+        
+        auto scale_tac = mk_tac(TAC_OP::MUL, scaled_temp, offset_exp->place, four);
+        scale_tac->prev = scaled_decl;
+        
+        // result = pointer +/- scaled_offset
+        auto result_temp = mk_tmp(DATA_TYPE::INT);
+        result_temp->is_pointer = true; // Result is also a pointer
+        auto result_decl = mk_tac(TAC_OP::VAR, result_temp);
+        result_decl->prev = scale_tac;
+        
+        auto result_tac = mk_tac(op, result_temp, pointer_exp->place, scaled_temp);
+        result_tac->prev = result_decl;
+        
+        auto result = mk_exp(result_temp, result_tac);
+        result->data_type = DATA_TYPE::INT;
+        return result;
+    }
+    
+    // Normal binary operation
     // Infer result type
     DATA_TYPE result_type = infer_binary_type(exp1->data_type, exp2->data_type);
     
@@ -893,6 +948,7 @@ std::shared_ptr<EXP> TACGenerator::do_address_of(std::shared_ptr<EXP> exp) {
     // Address-of operation: &var
     // Result type is INT (pointer)
     auto temp = mk_tmp(DATA_TYPE::INT);
+    temp->is_pointer = true; // Mark as pointer for pointer arithmetic
     auto temp_decl = mk_tac(TAC_OP::VAR, temp);
     temp_decl->prev = exp->code;
     
