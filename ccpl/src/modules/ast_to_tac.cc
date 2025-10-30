@@ -202,28 +202,55 @@ namespace twlm::ccpl::modules
                                                    std::function<void(const std::string&, DATA_TYPE)> handler) {
         if (!array_type || array_type->kind != TypeKind::ARRAY) return;
         
-        int array_size = array_type->array_size;
-        auto element_type = array_type->base_type;
+        // Collect all array dimensions
+        // Since parser builds Array<3, Array<2, char>> for a[2][3],
+        // we need to reverse the dimension order for correct expansion
+        std::vector<int> dimensions;
+        std::shared_ptr<Type> current_type = array_type;
         
-        for (int i = 0; i < array_size; ++i) {
-            std::string elem_name = base_name + "[" + std::to_string(i) + "]";
-            
-            if (element_type->kind == TypeKind::ARRAY) {
-                expand_array_elements(element_type, elem_name, handler);
-            } else if (element_type->kind == TypeKind::STRUCT) {
-                auto struct_type = tac_gen.get_struct_type(element_type->struct_name);
-                if (struct_type) {
-                    for (const auto& field : struct_type->struct_fields) {
-                        std::string field_name = elem_name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        handler(field_name, field_type);
-                    }
-                }
-            } else {
-                DATA_TYPE dtype = convert_type_to_data_type(element_type);
-                handler(elem_name, dtype);
-            }
+        while (current_type && current_type->kind == TypeKind::ARRAY) {
+            dimensions.push_back(current_type->array_size);
+            current_type = current_type->base_type;
         }
+        
+        // Reverse dimensions to match declaration order
+        // a[2][3] should expand as a[0..1][0..2], not a[0..2][0..1]
+        std::reverse(dimensions.begin(), dimensions.end());
+        
+        // Get the base type (non-array type)
+        std::shared_ptr<Type> base_type = current_type;
+        
+        // Expand array elements with correct dimension order using lambda
+        std::function<void(size_t, const std::string&)> expand_recursive;
+        expand_recursive = [&](size_t dim_index, const std::string& current_name) {
+            if (dim_index >= dimensions.size()) {
+                // Reached the base case - handle the base type
+                if (base_type && base_type->kind == TypeKind::STRUCT) {
+                    auto struct_type = tac_gen.get_struct_type(base_type->struct_name);
+                    if (struct_type) {
+                        for (const auto& field : struct_type->struct_fields) {
+                            std::string field_name = current_name + "." + std::get<0>(field);
+                            DATA_TYPE field_type = std::get<1>(field);
+                            handler(field_name, field_type);
+                        }
+                    }
+                } else {
+                    DATA_TYPE dtype = convert_type_to_data_type(base_type);
+                    handler(current_name, dtype);
+                }
+                return;
+            }
+            
+            // Expand current dimension
+            int size = dimensions[dim_index];
+            for (int i = 0; i < size; ++i) {
+                std::string elem_name = current_name + "[" + std::to_string(i) + "]";
+                expand_recursive(dim_index + 1, elem_name);
+            }
+        };
+        
+        // Start recursive expansion
+        expand_recursive(0, base_name);
     }
 
     void ASTToTACGenerator::generate_struct_decl(std::shared_ptr<StructDecl> decl) {
@@ -528,18 +555,19 @@ namespace twlm::ccpl::modules
     std::shared_ptr<EXP> ASTToTACGenerator::generate_identifier(std::shared_ptr<IdentifierExpr> expr) {
         if (!expr) return nullptr;
         
-        auto var = tac_gen.get_var(expr->name);
+        // Use lookup_sym to silently check if variable exists
+        auto var = tac_gen.lookup_sym(expr->name);
         
         // If variable is found, just return it
-        if (var) {
+        if (var && var->type == SYM_TYPE::VAR) {
             auto exp = tac_gen.mk_exp(var, nullptr);
             exp->data_type = var->data_type;
             return exp;
         }
         
         // If variable is not found, check if it's an array (try name[0])
-        auto first_elem = tac_gen.get_var(expr->name + "[0]");
-        if (first_elem) {
+        auto first_elem = tac_gen.lookup_sym(expr->name + "[0]");
+        if (first_elem && first_elem->type == SYM_TYPE::VAR) {
             // This identifier refers to an array
             // Generate &arr[0] to get the address of the first element
             auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
@@ -816,18 +844,38 @@ namespace twlm::ccpl::modules
 
         std::string field_var_name=expr->to_string();
 
-        // Look up the flattened field variable
-        auto field_var = tac_gen.get_var(field_var_name);
-        if (!field_var) {
-            std::cerr << "Error: Field variable not found: " << field_var_name << std::endl;
-            return nullptr;
+        // Look up the flattened field variable (use lookup_sym to avoid error messages)
+        auto field_var = tac_gen.lookup_sym(field_var_name);
+        if (field_var && field_var->type == SYM_TYPE::VAR) {
+            // Create expression with the field variable, no additional code needed
+            auto result_exp = tac_gen.mk_exp(field_var, nullptr);
+            result_exp->data_type = field_var->data_type;
+            return result_exp;
         }
         
-        // Create expression with the field variable, no additional code needed
-        auto result_exp = tac_gen.mk_exp(field_var, nullptr);
-        result_exp->data_type = field_var->data_type;
+        // If variable is not found, check if it's an array
+        // Try multi-dimensional array first (e.g., name_list[0][0])
+        auto first_elem = tac_gen.lookup_sym(field_var_name + "[0][0]");
+        if (first_elem && first_elem->type == SYM_TYPE::VAR) {
+            // This member refers to a 2D or higher array
+            // Generate &arr[0][0] to get the address of the first element
+            auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
+            auto addr_result = tac_gen.do_address_of(first_elem_exp);
+            return addr_result;
+        }
         
-        return result_exp;
+        // Try 1D array (e.g., name_list[0])
+        first_elem = tac_gen.lookup_sym(field_var_name + "[0]");
+        if (first_elem && first_elem->type == SYM_TYPE::VAR) {
+            // This member refers to a 1D array
+            // Generate &arr[0] to get the address of the first element
+            auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
+            auto addr_result = tac_gen.do_address_of(first_elem_exp);
+            return addr_result;
+        }
+        
+        std::cerr << "Error: Field variable not found: " << field_var_name << std::endl;
+        return nullptr;
     }
 
     std::shared_ptr<EXP> ASTToTACGenerator::generate_address_of(std::shared_ptr<AddressOfExpr> expr) {
