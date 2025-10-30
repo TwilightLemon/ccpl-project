@@ -75,6 +75,10 @@ namespace twlm::ccpl::modules
         
         void expand_array_elements(std::shared_ptr<Type> array_type, const std::string& base_name,
                                   std::function<void(const std::string&, DATA_TYPE)> handler);
+        
+        // Helper to find the first element of an array (handles multidimensional arrays)
+        // Returns the symbol for the first element (e.g., arr[0], arr[0][0], arr[0][0][0], etc.)
+        std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
     };
 
 } // namespace twlm::ccpl::modules

@@ -197,6 +197,21 @@ namespace twlm::ccpl::modules
         }
     }
 
+    std::shared_ptr<SYM> ASTToTACGenerator::find_array_first_element(const std::string& base_name) {
+        std::string suffix = "";
+        
+        for (int dims = 1; dims <= 5; ++dims) {
+            suffix += "[0]";
+            auto elem = tac_gen.lookup_sym(base_name + suffix);
+            if (elem && elem->type == SYM_TYPE::VAR) {
+                return elem;
+            } else {
+                continue;
+            }
+        }
+        return nullptr;
+    }
+
     void ASTToTACGenerator::expand_array_elements(std::shared_ptr<Type> array_type, 
                                                    const std::string& base_name,
                                                    std::function<void(const std::string&, DATA_TYPE)> handler) {
@@ -565,11 +580,11 @@ namespace twlm::ccpl::modules
             return exp;
         }
         
-        // If variable is not found, check if it's an array (try name[0])
-        auto first_elem = tac_gen.lookup_sym(expr->name + "[0]");
+        // If variable is not found, check if it's an array
+        auto first_elem = find_array_first_element(expr->name);
         if (first_elem && first_elem->type == SYM_TYPE::VAR) {
             // This identifier refers to an array
-            // Generate &arr[0] to get the address of the first element
+            // Generate &arr[0] (or &arr[0][0], etc.) to get the address of the first element
             auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
             auto addr_result = tac_gen.do_address_of(first_elem_exp);
             return addr_result;
@@ -605,8 +620,8 @@ namespace twlm::ccpl::modules
             if (expr->value->kind == ASTNodeKind::STRING_LITERAL) {
                 auto string_literal = std::dynamic_pointer_cast<StringLiteralExpr>(expr->value);
                 
-                // Check if the target is an array by checking if name[0] exists
-                auto first_elem = tac_gen.get_var(id_expr->name + "[0]");
+                // Check if the target is an array
+                auto first_elem = find_array_first_element(id_expr->name);
                 if (first_elem) {
                     // This is an array assignment
                     std::shared_ptr<TAC> assign_tac = nullptr;
@@ -654,10 +669,10 @@ namespace twlm::ccpl::modules
             std::shared_ptr<EXP> value_exp;
             if (expr->value->kind == ASTNodeKind::IDENTIFIER) {
                 auto value_id = std::dynamic_pointer_cast<IdentifierExpr>(expr->value);
-                // Check if this identifier is an array by seeing if name[0] exists
-                auto first_elem = tac_gen.get_var(value_id->name + "[0]");
+                // Check if this identifier is an array
+                auto first_elem = find_array_first_element(value_id->name);
                 if (first_elem) {
-                    // This is an array name, convert to &array[0]
+                    // This is an array name, convert to &array[0] (or &array[0][0], etc.)
                     // This implements the array-to-pointer decay
                     auto addr_exp = tac_gen.mk_exp(first_elem, nullptr);
                     value_exp = tac_gen.do_address_of(addr_exp);
@@ -854,21 +869,10 @@ namespace twlm::ccpl::modules
         }
         
         // If variable is not found, check if it's an array
-        // Try multi-dimensional array first (e.g., name_list[0][0])
-        auto first_elem = tac_gen.lookup_sym(field_var_name + "[0][0]");
+        auto first_elem = find_array_first_element(field_var_name);
         if (first_elem && first_elem->type == SYM_TYPE::VAR) {
-            // This member refers to a 2D or higher array
-            // Generate &arr[0][0] to get the address of the first element
-            auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
-            auto addr_result = tac_gen.do_address_of(first_elem_exp);
-            return addr_result;
-        }
-        
-        // Try 1D array (e.g., name_list[0])
-        first_elem = tac_gen.lookup_sym(field_var_name + "[0]");
-        if (first_elem && first_elem->type == SYM_TYPE::VAR) {
-            // This member refers to a 1D array
-            // Generate &arr[0] to get the address of the first element
+            // This member refers to an array (any dimension)
+            // Generate &arr[0] (or &arr[0][0], etc.) to get the address of the first element
             auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
             auto addr_result = tac_gen.do_address_of(first_elem_exp);
             return addr_result;
