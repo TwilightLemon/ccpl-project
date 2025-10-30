@@ -48,7 +48,7 @@
 
 %type <std::shared_ptr<Type>> type_spec 
 %type <std::string> func_name
-%type <std::pair<std::shared_ptr<Type>, std::string>> var_declarator
+%type <std::pair<std::shared_ptr<Type>, std::string>> var_declarator direct_declarator
 
 %right '='
 %left EQ NE LT LE GT GE
@@ -160,21 +160,21 @@ type_spec: INT
 }
 ;
 
-var_declarator: IDENTIFIER
-{
-    $$ = std::make_pair(ast_builder.get_current_type(), $1);
-}
-| '*' var_declarator
+var_declarator: '*' var_declarator
 {
     auto pointer_type = ast_builder.make_pointer_type($2.first);
     $$ = std::make_pair(pointer_type, $2.second);
 }
-| IDENTIFIER '[' INTEGER ']'
+| direct_declarator
 {
-    auto array_type = ast_builder.make_array_type(ast_builder.get_current_type(), $3);
-    $$ = std::make_pair(array_type, $1);
+    $$ = $1;
 }
-| var_declarator '[' INTEGER ']'
+
+direct_declarator: IDENTIFIER
+{
+    $$ = std::make_pair(ast_builder.get_current_type(), $1);
+}
+| direct_declarator '[' INTEGER ']'
 {
     auto array_type = ast_builder.make_array_type($1.first, $3);
     $$ = std::make_pair(array_type, $1.second);

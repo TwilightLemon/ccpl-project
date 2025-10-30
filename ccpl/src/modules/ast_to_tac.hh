@@ -29,7 +29,7 @@ namespace twlm::ccpl::modules
     private:
         // Declaration generation
         void generate_declaration(std::shared_ptr<Declaration> decl);
-        void generate_var_decl(std::shared_ptr<VarDecl> decl);
+        std::shared_ptr<TAC> generate_var_decl(std::shared_ptr<VarDecl> decl);
         void generate_func_decl(std::shared_ptr<FuncDecl> decl);
         void generate_struct_decl(std::shared_ptr<StructDecl> decl);
         

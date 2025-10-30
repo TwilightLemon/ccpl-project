@@ -19,58 +19,7 @@ namespace twlm::ccpl::modules
 
         for (auto &decl : program->declarations)
         {
-            if (decl->kind == ASTNodeKind::STRUCT_DECL)
-            {
-                // struct type declaration
-                auto struct_decl = std::dynamic_pointer_cast<StructDecl>(decl);
-                generate_struct_decl(struct_decl);
-            }
-            else if (decl->kind == ASTNodeKind::VAR_DECL)
-            {
-                // global variable declaration
-                auto var_decl = std::dynamic_pointer_cast<VarDecl>(decl);
-                
-                //array is handled first (struct[] is recoginzed as array)
-                if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY)
-                {
-                    //an array declaration is expanded into individual elements for storage,
-                    //and each of element is recognized as a SYM.
-                    expand_array_elements(var_decl->var_type, var_decl->name,
-                                          [this](const auto& name, DATA_TYPE dtype)
-                                          {
-                                              tac_gen.declare_var(name, dtype);
-                                          });
-                }
-                else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT)
-                {
-                    auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
-                    // for we have expanded structs while handling their declarations.
-                    if (struct_type)
-                    {
-                        for (const auto &field : struct_type->struct_fields)
-                        {
-                            std::string field_var_name = var_decl->name + "." + std::get<0>(field);
-                            DATA_TYPE field_type = std::get<1>(field);
-                            auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
-
-                            tac_gen.link_tac(field_var_tac);
-                        }
-                    }
-                }
-                else
-                {
-                    //basic type: int char ptr...
-                    DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
-                    auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
-
-                    tac_gen.link_tac(var_tac);
-                }
-            }
-            else if (decl->kind == ASTNodeKind::FUNC_DECL)
-            {
-                auto func_decl = std::dynamic_pointer_cast<FuncDecl>(decl);
-                generate_func_decl(func_decl);
-            }
+            generate_declaration(decl);
         }
 
         tac_gen.complete();
@@ -86,7 +35,10 @@ namespace twlm::ccpl::modules
         switch (decl->kind)
         {
         case ASTNodeKind::VAR_DECL:
-            generate_var_decl(std::dynamic_pointer_cast<VarDecl>(decl));
+            {
+                auto tac = generate_var_decl(std::dynamic_pointer_cast<VarDecl>(decl));
+                tac_gen.link_tac(tac);
+            }
             break;
         case ASTNodeKind::FUNC_DECL:
             generate_func_decl(std::dynamic_pointer_cast<FuncDecl>(decl));
@@ -100,19 +52,21 @@ namespace twlm::ccpl::modules
         }
     }
 
-    void ASTToTACGenerator::generate_var_decl(std::shared_ptr<VarDecl> decl)
+    std::shared_ptr<TAC> ASTToTACGenerator::generate_var_decl(std::shared_ptr<VarDecl> decl)
     {
         if (!decl)
-            return;
+            return nullptr;
 
         if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY)
         {
+            std::shared_ptr<TAC> result_tac = nullptr;
             expand_array_elements(decl->var_type, decl->name,
-                                  [this](const auto &name, DATA_TYPE dtype)
+                                  [this, &result_tac](const auto &name, DATA_TYPE dtype)
                                   {
-                                      tac_gen.declare_var(name, dtype);
+                                      auto elem_tac = tac_gen.declare_var(name, dtype);
+                                      result_tac = tac_gen.join_tac(result_tac, elem_tac);
                                   });
-            return;
+            return result_tac;
         }
 
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT)
@@ -121,16 +75,22 @@ namespace twlm::ccpl::modules
             if (!struct_type)
             {
                 std::cerr << "Error: Unknown struct type: " << decl->var_type->struct_name << std::endl;
-                return;
+                return nullptr;
             }
 
+            std::shared_ptr<TAC> result_tac = nullptr;
             for (const auto &field : struct_type->struct_fields)
             {
                 std::string field_var_name = decl->name + "." + std::get<0>(field);
                 DATA_TYPE field_type = std::get<1>(field);
                 auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
+                result_tac = tac_gen.join_tac(result_tac, field_var_tac);
             }
-            return;
+            if (decl->init_value)
+            {
+                std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
+            }
+            return result_tac;
         }
 
         //basic type
@@ -143,7 +103,9 @@ namespace twlm::ccpl::modules
             auto init_exp = generate_expression(decl->init_value);
             auto var_sym = tac_gen.get_var(decl->name);
             auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
+            return tac_gen.join_tac(var_tac, assign_tac);
         }
+        return var_tac;
     }
 
     void ASTToTACGenerator::generate_func_decl(std::shared_ptr<FuncDecl> decl)
@@ -259,8 +221,6 @@ namespace twlm::ccpl::modules
             return;
 
         // expand nested array dimensions!!
-        // Since parser.y builds Array<3, Array<2, char>> for a[2][3]....
-        // we need to reverse the dimension order for correct expansion
         std::vector<int> dimensions;
         std::shared_ptr<Type> current_type = array_type;
 
@@ -269,7 +229,7 @@ namespace twlm::ccpl::modules
             dimensions.push_back(current_type->array_size);
             current_type = current_type->base_type;
         }
-        std::reverse(dimensions.begin(), dimensions.end());
+        //std::reverse(dimensions.begin(), dimensions.end());
 
         // current_type is now the base type of the arr
         std::shared_ptr<Type> base_type = current_type;
@@ -352,58 +312,7 @@ namespace twlm::ccpl::modules
         switch (stmt->kind)
         {
         case ASTNodeKind::VAR_DECL:
-        {
-            auto var_decl = std::dynamic_pointer_cast<VarDecl>(stmt);
-
-            if (var_decl->var_type && var_decl->var_type->kind == TypeKind::ARRAY)
-            {
-                std::shared_ptr<TAC> result_tac = nullptr;
-                expand_array_elements(var_decl->var_type, var_decl->name,
-                                      [this, &result_tac](const auto &name, DATA_TYPE dtype)
-                                      {
-                                          auto elem_tac = tac_gen.declare_var(name, dtype);
-                                          result_tac = tac_gen.join_tac(result_tac, elem_tac);
-                                      });
-                return result_tac;
-            }
-            else if (var_decl->var_type && var_decl->var_type->kind == TypeKind::STRUCT)
-            {
-                auto struct_type = tac_gen.get_struct_type(var_decl->var_type->struct_name);
-                if (struct_type)
-                {
-                    std::shared_ptr<TAC> result_tac = nullptr;
-                    for (const auto &field : struct_type->struct_fields)
-                    {
-                        std::string field_var_name = var_decl->name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
-                        result_tac = tac_gen.join_tac(result_tac, field_var_tac);
-                    }
-
-                    if (var_decl->init_value)
-                    {
-                        std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
-                    }
-
-                    return result_tac;
-                }
-            }
-            else
-            {
-                DATA_TYPE dtype = convert_type_to_data_type(var_decl->var_type);
-                auto var_tac = tac_gen.declare_var(var_decl->name, dtype);
-
-                if (var_decl->init_value)
-                {
-                    auto init_exp = generate_expression(var_decl->init_value);
-                    auto var_sym = tac_gen.get_var(var_decl->name);
-                    auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
-                    return tac_gen.join_tac(var_tac, assign_tac);
-                }
-                return var_tac;
-            }
-            return nullptr;
-        }
+            return generate_var_decl(std::dynamic_pointer_cast<VarDecl>(stmt));
         case ASTNodeKind::EXPR_STMT:
             return generate_expr_stmt(std::dynamic_pointer_cast<ExprStmt>(stmt));
         case ASTNodeKind::BLOCK_STMT:
