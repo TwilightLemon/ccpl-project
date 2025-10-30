@@ -70,13 +70,19 @@ namespace twlm::ccpl::modules
         // convert expression vector to linked list for function calls
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
 
+        // extract struct fields recursively during declaration
         void extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields);
         
         void expand_array_elements(std::shared_ptr<Type> array_type, const std::string& base_name,
                                   std::function<void(const std::string&, DATA_TYPE)> handler);
+
+        //expand declared struct fields
+        void expand_struct_fields(const std::string& struct_name, const std::string& base_name,
+                                 std::function<void(const std::string&, DATA_TYPE)> handler);
         
         // find the first SYM of a expanded array..
         std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
+
     };
 
 } // namespace twlm::ccpl::modules

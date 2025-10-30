@@ -71,21 +71,14 @@ namespace twlm::ccpl::modules
 
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT)
         {
-            auto struct_type = tac_gen.get_struct_type(decl->var_type->struct_name);
-            if (!struct_type)
-            {
-                std::cerr << "Error: Unknown struct type: " << decl->var_type->struct_name << std::endl;
-                return nullptr;
-            }
-
             std::shared_ptr<TAC> result_tac = nullptr;
-            for (const auto &field : struct_type->struct_fields)
-            {
-                std::string field_var_name = decl->name + "." + std::get<0>(field);
-                DATA_TYPE field_type = std::get<1>(field);
-                auto field_var_tac = tac_gen.declare_var(field_var_name, field_type);
-                result_tac = tac_gen.join_tac(result_tac, field_var_tac);
-            }
+            expand_struct_fields(decl->var_type->struct_name, decl->name,
+                                [this, &result_tac](const std::string& field_name, DATA_TYPE field_type)
+                                {
+                                    auto field_var_tac = tac_gen.declare_var(field_name, field_type);
+                                    result_tac = tac_gen.join_tac(result_tac, field_var_tac);
+                                });
+            
             if (decl->init_value)
             {
                 std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
@@ -124,20 +117,14 @@ namespace twlm::ccpl::modules
         for (auto &param : decl->parameters)
         {
             // struct type
-            //TODO: unify struct expansion..
             if (param->param_type && param->param_type->kind == TypeKind::STRUCT)
             {
-                auto struct_type = tac_gen.get_struct_type(param->param_type->struct_name);
-                if (struct_type)
-                {
-                    for (const auto &field : struct_type->struct_fields)
-                    {
-                        std::string field_param_name = param->name + "." + std::get<0>(field);
-                        DATA_TYPE field_type = std::get<1>(field);
-                        auto field_param_tac = tac_gen.declare_para(field_param_name, field_type);
-                        param_code = tac_gen.join_tac(param_code, field_param_tac);
-                    }
-                }
+                expand_struct_fields(param->param_type->struct_name, param->name,
+                                    [this, &param_code](const std::string& field_name, DATA_TYPE field_type)
+                                    {
+                                        auto field_param_tac = tac_gen.declare_para(field_name, field_type);
+                                        param_code = tac_gen.join_tac(param_code, field_param_tac);
+                                    });
             }
             else
             {
@@ -162,6 +149,24 @@ namespace twlm::ccpl::modules
         current_function = nullptr;
     }
 
+    void ASTToTACGenerator::expand_struct_fields(const std::string& struct_name, const std::string& base_name,
+                                                 std::function<void(const std::string&, DATA_TYPE)> handler)
+    {
+        auto struct_type = tac_gen.get_struct_type(struct_name);
+        if (!struct_type)
+        {
+            std::cerr << "Error: Unknown struct type: " << struct_name << std::endl;
+            return;
+        }
+
+        for (const auto &field : struct_type->struct_fields)
+        {
+            std::string field_name = base_name + "." + std::get<0>(field);
+            DATA_TYPE field_type = std::get<1>(field);
+            handler(field_name, field_type);
+        }
+    }
+
     void ASTToTACGenerator::extract_struct_fields(const std::shared_ptr<VarDecl> &field, std::vector<std::pair<std::string, DATA_TYPE>> &fields)
     {
         if (field->var_type && field->var_type->kind == TypeKind::ARRAY)
@@ -176,20 +181,11 @@ namespace twlm::ccpl::modules
 
         if (field->var_type && field->var_type->kind == TypeKind::STRUCT)
         {
-            auto struct_type = tac_gen.get_struct_type(field->var_type->struct_name);
-            if (struct_type)
-            {
-                for (const auto &sub_field : struct_type->struct_fields)
-                {
-                    std::string nested_field_name = field->name + "." + std::get<0>(sub_field);
-                    DATA_TYPE nested_field_type = std::get<1>(sub_field);
-                    fields.push_back({nested_field_name, nested_field_type});
-                }
-            }
-            else
-            {
-                throw std::runtime_error("Unknown struct type: " + field->var_type->struct_name);
-            }
+            expand_struct_fields(field->var_type->struct_name, field->name,
+                                [&fields](const std::string& name, DATA_TYPE dtype)
+                                {
+                                    fields.push_back({name, dtype});
+                                });
         }
     }
 
@@ -241,16 +237,7 @@ namespace twlm::ccpl::modules
             {
                 if (base_type && base_type->kind == TypeKind::STRUCT)
                 {
-                    auto struct_type = tac_gen.get_struct_type(base_type->struct_name);
-                    if (struct_type)
-                    {
-                        for (const auto &field : struct_type->struct_fields)
-                        {
-                            std::string field_name = current_name + "." + std::get<0>(field);
-                            DATA_TYPE field_type = std::get<1>(field);
-                            handler(field_name, field_type);
-                        }
-                    }
+                    expand_struct_fields(base_type->struct_name, current_name, handler);
                 }
                 else
                 {
@@ -586,7 +573,7 @@ namespace twlm::ccpl::modules
             return exp;
         }
 
-        // If variable is not found, check if it's an array
+        // not found, check if it's an array
         auto first_elem = find_array_first_element(expr->name);
         if (first_elem && first_elem->type == SYM_TYPE::VAR)
         {

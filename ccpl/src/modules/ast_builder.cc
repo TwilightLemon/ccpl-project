@@ -251,15 +251,4 @@ namespace twlm::ccpl::modules
     {
         std::clog << "AST building completed successfully." << std::endl;
     }
-
-    void ASTBuilder::error(const std::string &msg)
-    {
-        std::cerr << "AST Builder Error: " << msg << std::endl;
-    }
-
-    void ASTBuilder::warning(const std::string &msg)
-    {
-        std::cerr << "AST Builder Warning: " << msg << std::endl;
-    }
-
 }

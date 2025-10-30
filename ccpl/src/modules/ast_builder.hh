@@ -91,10 +91,6 @@ namespace twlm::ccpl::modules
         void add_declaration(std::shared_ptr<Declaration> decl);
         void complete();
         std::shared_ptr<Program> get_program() { return program_root; }
-
-        // Error handling
-        void error(const std::string &msg);
-        void warning(const std::string &msg);
     };
 
 }
