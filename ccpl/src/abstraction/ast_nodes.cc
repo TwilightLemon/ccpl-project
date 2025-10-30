@@ -61,7 +61,10 @@ namespace twlm::ccpl::abstraction
     }
 
     std::string AssignExpr::to_string() const {
-        return target->to_string() + " = " + value->to_string();
+        std::ostringstream oss;
+        //for some reason, parser may not properly recognize the priority of expressions.
+        oss << "(" << target->to_string() << " = " << value->to_string() << ")";
+        return oss.str();
     }
 
     std::string FuncCallExpr::to_string() const {
@@ -77,6 +80,28 @@ namespace twlm::ccpl::abstraction
 
     std::string ArrayAccessExpr::to_string() const {
         return array->to_string() + "[" + index->to_string() + "]";
+    }
+
+    bool ArrayAccessExpr::all_constant_access() const{
+        const ArrayAccessExpr* cur = this;
+        bool all_constant = true;
+        while (cur)
+        {
+            if (cur->index->kind != ASTNodeKind::CONST_INT)
+            {
+                all_constant = false;
+                break;
+            }
+            if (cur->array->kind == ASTNodeKind::ARRAY_ACCESS)
+            {
+                cur = dynamic_cast<const ArrayAccessExpr*>(cur->array.get());
+            }
+            else
+            {
+                break;
+            }
+        }
+        return all_constant;
     }
 
     std::string MemberAccessExpr::to_string() const {

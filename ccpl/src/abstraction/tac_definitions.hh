@@ -2,7 +2,6 @@
 
 namespace twlm::ccpl::abstraction
 {
-    // Data Types
     enum class DATA_TYPE
     {
         VOID,
@@ -29,7 +28,6 @@ namespace twlm::ccpl::abstraction
         }
     }
 
-    // Symbol Types
     enum class SYM_TYPE
     {
         UNDEF,
@@ -42,14 +40,12 @@ namespace twlm::ccpl::abstraction
         STRUCT_TYPE  // For struct type definitions
     };
 
-    // Symbol Scope
     enum class SYM_SCOPE
     {
         GLOBAL,
         LOCAL
     };
 
-    // TAC Operations
     enum class TAC_OP
     {
         UNDEF,     // undefined

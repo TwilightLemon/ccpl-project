@@ -18,7 +18,7 @@ namespace twlm::ccpl::modules
     private:
         TACGenerator tac_gen;
         
-        // Current context
+        // current function context. reserved for feature: init expression.
         std::shared_ptr<SYM> current_function;
         
     public:
@@ -31,7 +31,6 @@ namespace twlm::ccpl::modules
         void generate_declaration(std::shared_ptr<Declaration> decl);
         void generate_var_decl(std::shared_ptr<VarDecl> decl);
         void generate_func_decl(std::shared_ptr<FuncDecl> decl);
-        void generate_param_decl(std::shared_ptr<ParamDecl> decl);
         void generate_struct_decl(std::shared_ptr<StructDecl> decl);
         
         // Statement generation
@@ -65,10 +64,10 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> generate_address_of(std::shared_ptr<AddressOfExpr> expr);
         std::shared_ptr<EXP> generate_dereference(std::shared_ptr<DereferenceExpr> expr);
         
-        // Type conversion helper
+        // for struct / array expansion
         DATA_TYPE convert_type_to_data_type(std::shared_ptr<Type> type);
-        
-        // Helper to convert expression vector to linked list for function calls
+
+        // convert expression vector to linked list for function calls
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
 
         void extract_struct_fields(const std::shared_ptr<VarDecl> &field,std::vector<std::pair<std::string, DATA_TYPE>> &fields);
@@ -76,8 +75,7 @@ namespace twlm::ccpl::modules
         void expand_array_elements(std::shared_ptr<Type> array_type, const std::string& base_name,
                                   std::function<void(const std::string&, DATA_TYPE)> handler);
         
-        // Helper to find the first element of an array (handles multidimensional arrays)
-        // Returns the symbol for the first element (e.g., arr[0], arr[0][0], arr[0][0][0], etc.)
+        // find the first SYM of a expanded array..
         std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
     };
 

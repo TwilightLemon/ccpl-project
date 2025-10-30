@@ -10,11 +10,6 @@
 
 namespace twlm::ccpl::abstraction
 {
-    struct TYPE{
-        enum class BASETYPE{BASIC, POINTER, ARRAY, FUNCTION} basetype;
-    };
-
-    // Symbol structure
     struct SYM
     {
         SYM_TYPE type;       // Symbol type (VAR, FUNC, etc.)
@@ -26,15 +21,15 @@ namespace twlm::ccpl::abstraction
         int label;
 
         // For functions
-        std::vector<DATA_TYPE> param_types; // Parameter types
-        DATA_TYPE return_type;              // Return type
+        std::vector<DATA_TYPE> param_types;
+        DATA_TYPE return_type;
 
         // For struct types
-        std::string struct_type_name;       // Name of struct type (if this is a struct variable)
+        std::string struct_type_name; //refer to the struct type name of a variable
         std::vector<std::tuple<std::string, DATA_TYPE, int>> struct_fields; // (field_name, type, offset) - preserves order
 
-        // For pointer tracking (since pointers are represented as INT in TAC)
-        bool is_pointer;     // True if this symbol is a pointer type
+        // For pointers
+        bool is_pointer;
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
@@ -77,7 +72,6 @@ namespace twlm::ccpl::abstraction
         }
     };
 
-    // TAC instruction structure
     struct TAC
     {
         TAC_OP op;
@@ -200,29 +194,27 @@ namespace twlm::ccpl::abstraction
         }
     };
 
-    // Expression structure
     struct EXP
     {
         std::shared_ptr<TAC> code;
         std::shared_ptr<SYM> place;
-        DATA_TYPE data_type;       // Type of the expression result
+        DATA_TYPE data_type;       // type of the expression result
         std::shared_ptr<EXP> next; // for argument lists
 
         EXP() : code(nullptr), place(nullptr),
                 data_type(DATA_TYPE::UNDEF), next(nullptr) {}
     };
 
-    // Loop context for break/continue
     struct LoopContext {
-        std::shared_ptr<SYM> break_label;    // Label to jump to on break
-        std::shared_ptr<SYM> continue_label; // Label to jump to on continue
-        std::shared_ptr<SYM> loop_start_label; // Label for the start of the loop (for 'for' loops)
+        std::shared_ptr<SYM> break_label;
+        std::shared_ptr<SYM> continue_label;
+        std::shared_ptr<SYM> loop_start_label;
     };
 
     struct SwitchContext {
-        std::shared_ptr<SYM> break_label;    // Label to jump to on break
-        std::unordered_map<int, std::shared_ptr<SYM>> case_labels; // Map case values to labels
-        std::shared_ptr<SYM> default_label; // Label for default case
+        std::shared_ptr<SYM> break_label;
+        std::unordered_map<int, std::shared_ptr<SYM>> case_labels;
+        std::shared_ptr<SYM> default_label;
 
         SwitchContext(std::shared_ptr<SYM> break_lbl, std::shared_ptr<SYM> default_lbl)
             : break_label(break_lbl), default_label(default_lbl) {}

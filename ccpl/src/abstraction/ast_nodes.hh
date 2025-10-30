@@ -13,8 +13,6 @@ namespace twlm::ccpl::abstraction
     struct Declaration;
     struct Type;
 
-    // ============ Type System ============
-    
     enum class TypeKind {
         BASIC,      // int, char, void
         POINTER,    // T*
@@ -75,8 +73,6 @@ namespace twlm::ccpl::abstraction
         bool is_struct() const { return kind == TypeKind::STRUCT; }
     };
 
-    // ============ Base AST Node ============
-    
     enum class ASTNodeKind {
         // Expressions
         CONST_INT,
@@ -125,14 +121,14 @@ namespace twlm::ccpl::abstraction
         virtual ~ASTNode() = default;
         virtual std::string to_string() const = 0;
     };
-
-    // ============ Expressions ============
     
     struct Expression : public ASTNode {
         std::shared_ptr<Type> expr_type;
         
         Expression(ASTNodeKind k) : ASTNode(k) {}
     };
+
+    //region Expressions
 
     struct ConstIntExpr : public Expression {
         int value;
@@ -207,7 +203,7 @@ namespace twlm::ccpl::abstraction
     };
 
     struct AssignExpr : public Expression {
-        std::shared_ptr<Expression> target;  // Can be Identifier, ArrayAccess, Dereference, etc.
+        std::shared_ptr<Expression> target;  //Identifier, ArrayAccess, Dereference, etc.
         std::shared_ptr<Expression> value;
         
         AssignExpr(std::shared_ptr<Expression> t, std::shared_ptr<Expression> v)
@@ -234,12 +230,13 @@ namespace twlm::ccpl::abstraction
             : Expression(ASTNodeKind::ARRAY_ACCESS), array(arr), index(idx) {}
         
         std::string to_string() const override;
+        bool all_constant_access() const;
     };
 
     struct MemberAccessExpr : public Expression {
         std::shared_ptr<Expression> object;
         std::string member_name;
-        bool is_pointer_access;  // true for ->, false for .
+        bool is_pointer_access;  // true for ->, false for .  :( however, pointer access is not supported..
         
         MemberAccessExpr(std::shared_ptr<Expression> obj, 
                          const std::string& member, 
@@ -268,7 +265,8 @@ namespace twlm::ccpl::abstraction
         std::string to_string() const override;
     };
 
-    // ============ Statements ============
+    // endregion
+    //region Statements
     
     struct Statement : public ASTNode {
         Statement(ASTNodeKind k) : ASTNode(k) {}
@@ -400,7 +398,8 @@ namespace twlm::ccpl::abstraction
         }
     };
 
-    // ============ Declarations ============
+    // endregion
+    // region Declarations
     
     struct Declaration : public Statement {
         Declaration(ASTNodeKind k) : Statement(k) {}
@@ -456,7 +455,7 @@ namespace twlm::ccpl::abstraction
         std::string to_string() const override;
     };
 
-    // ============ Program (Root) ============
+    // endregion
     
     struct Program : public ASTNode {
         std::vector<std::shared_ptr<Declaration>> declarations;

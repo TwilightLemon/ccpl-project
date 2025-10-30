@@ -260,14 +260,10 @@ std::shared_ptr<TAC> TACGenerator::do_func(std::shared_ptr<SYM> func,
     code = join_tac(args, code);
     tend->prev = join_tac(tbegin, code);
     
-    // Link this function to the previous TAC
+    // link 2 to the previous TAC
     if (tac_last != nullptr) {
-        // Find the beginning of this function's TAC
-        auto func_start = tlab;
-        func_start->prev = tac_last;
+        tlab->prev = tac_last;
     }
-    
-    // Update tac_last to the end of this function
     tac_last = tend;
     
     return tend;
