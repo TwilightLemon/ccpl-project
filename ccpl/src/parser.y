@@ -169,6 +169,7 @@ var_declarator: '*' var_declarator
 {
     $$ = $1;
 }
+;
 
 direct_declarator: IDENTIFIER
 {

@@ -16,6 +16,7 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: Null program node" << std::endl;
             return;
         }
+        _program = program;
 
         for (auto &decl : program->declarations)
         {
@@ -72,6 +73,7 @@ namespace twlm::ccpl::modules
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT)
         {
             std::shared_ptr<TAC> result_tac = nullptr;
+            
             expand_struct_fields(decl->var_type->struct_name, decl->name,
                                 [this, &result_tac](const std::string& field_name, DATA_TYPE field_type)
                                 {
@@ -225,7 +227,7 @@ namespace twlm::ccpl::modules
             dimensions.push_back(current_type->array_size);
             current_type = current_type->base_type;
         }
-        //std::reverse(dimensions.begin(), dimensions.end());
+        std::reverse(dimensions.begin(), dimensions.end());
 
         // current_type is now the base type of the arr
         std::shared_ptr<Type> base_type = current_type;

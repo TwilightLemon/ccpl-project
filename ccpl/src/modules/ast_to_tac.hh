@@ -17,9 +17,9 @@ namespace twlm::ccpl::modules
     {
     private:
         TACGenerator tac_gen;
-        
-        // current function context. reserved for feature: init expression.
+        std::shared_ptr<Program> _program;
         std::shared_ptr<SYM> current_function;
+        std::unordered_map<std::string, std::shared_ptr<Type>> array_defs;
         
     public:
         ASTToTACGenerator();
