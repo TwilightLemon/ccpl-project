@@ -761,10 +761,7 @@ void ObjGenerator::generate()
 
     // Generate assembly header
     asm_head();
-
-    // Jump to main function to ensure correct program entry
-    output << "\n\t# Jump to main\n";
-    output << "\tJMP main\n";
+    asm_main();
 
     // Translate TAC to assembly
     auto cur = tac_gen.get_tac_first();
@@ -780,6 +777,23 @@ void ObjGenerator::generate()
 
     // Generate static data section
     asm_static();
+}
+
+void ObjGenerator::asm_main(){
+    auto cur =tac_gen.get_tac_first();
+    //check if the first label of func is main
+    while(cur!=nullptr){
+        if(cur->op==TAC_OP::LABEL){
+            if(cur->a->name=="main"){
+                return;
+            }else{
+                break;
+            }
+        }
+        cur=cur->next;
+    }
+    output << "\n\t# Jump to main\n";
+    output << "\tJMP main\n";
 }
 
 void ObjGenerator::error(const std::string& msg)

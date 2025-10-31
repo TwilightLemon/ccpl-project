@@ -53,10 +53,10 @@ int main(int argc, char *argv[])
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
-        // twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
-        // opt.optimize();
-        // std::clog << "=== Optimized TAC ===" << std::endl;
-        // tac_gen.print_tac(std::clog);
+        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
+        opt.optimize();
+        std::clog << "=== Optimized TAC ===" << std::endl;
+        tac_gen.print_tac(std::clog);
 
         // Generate assembly code
         std::clog << "=== Assembly Code Generation ===" << std::endl;

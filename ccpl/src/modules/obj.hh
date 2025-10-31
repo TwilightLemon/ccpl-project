@@ -83,6 +83,7 @@ namespace twlm::ccpl::modules
         void asm_head();
         void asm_tail();
         void asm_static();
+        void asm_main();
         void asm_str(std::shared_ptr<SYM> s);
         
         void asm_code(std::shared_ptr<TAC> tac);

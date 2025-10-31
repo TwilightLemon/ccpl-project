@@ -13,7 +13,8 @@ bool TACOptimizer::get_const_value(std::shared_ptr<SYM> sym, int &value) const
 {
     if (!sym)
         return false;
-    if (sym->type == SYM_TYPE::CONST_INT)
+    if ((sym->type == SYM_TYPE::CONST_INT && sym->data_type == DATA_TYPE::INT) ||
+        (sym->type == SYM_TYPE::CONST_CHAR && sym->data_type == DATA_TYPE::CHAR))
     {
         value = std::get<int>(sym->value);
         return true;
@@ -202,6 +203,7 @@ bool TACOptimizer::constant_propagation(std::shared_ptr<TAC> tac)
             }
         }
 
+
         // 如果是 COPY CONST，记录左值为常量
         if (current->op == TAC_OP::COPY && current->a && current->b)
         {
@@ -228,9 +230,13 @@ bool TACOptimizer::constant_propagation(std::shared_ptr<TAC> tac)
                   current->op == TAC_OP::LT || current->op == TAC_OP::LE ||
                   current->op == TAC_OP::GT || current->op == TAC_OP::GE ||
                   current->op == TAC_OP::CALL || current->op == TAC_OP::INPUT ||
-                  current->op == TAC_OP::ADDR || current->op == TAC_OP::LOAD_PTR))
+                  current->op == TAC_OP::STORE_PTR || current->op == TAC_OP::LOAD_PTR))
         {
             const_map.erase(current->a);
+        }
+        // 对于 STORE_PTR，清除被存储变量的常量信息
+        else if(current -> a && current->b && current->op ==TAC_OP::ADDR){
+            const_map.erase(current->b);
         }
 
         current = current->next;
