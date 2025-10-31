@@ -736,6 +736,49 @@ namespace twlm::ccpl::modules
         if (!expr)
             return nullptr;
 
+        // Check if the base is a pointer type (not an array)
+        // For pointer access like p[i], treat it as *(p + i)
+        if (expr->array->kind == ASTNodeKind::IDENTIFIER)
+        {
+            auto id = std::dynamic_pointer_cast<IdentifierExpr>(expr->array);
+            auto var_sym = tac_gen.get_var(id->name);
+            
+            // If it's a pointer variable, handle it differently
+            if (var_sym && var_sym->is_pointer)
+            {
+                // Generate pointer expression: p
+                auto ptr_exp = generate_expression(expr->array);
+                if (!ptr_exp || !ptr_exp->place)
+                {
+                    std::cerr << "Error: Failed to generate pointer expression" << std::endl;
+                    return nullptr;
+                }
+                
+                // Generate index expression: i
+                auto index_exp = generate_expression(expr->index);
+                if (!index_exp || !index_exp->place)
+                {
+                    std::cerr << "Error: Failed to generate index expression" << std::endl;
+                    return nullptr;
+                }
+                
+                // Calculate address: p + i
+                auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, ptr_exp, index_exp);
+                
+                // Dereference to get the value: *(p + i)
+                auto result_exp = tac_gen.do_dereference(addr_exp);
+                
+                // Set the correct data type (assuming pointer points to the base type)
+                if (result_exp && result_exp->place && var_sym->data_type != DATA_TYPE::UNDEF)
+                {
+                    result_exp->data_type = var_sym->data_type;
+                    result_exp->place->data_type = var_sym->data_type;
+                }
+                
+                return result_exp;
+            }
+        }
+
         // Check if all indices are constant - use direct variable access
         if (expr->all_constant_access())
         {
@@ -1061,6 +1104,37 @@ namespace twlm::ccpl::modules
     {
         if (!expr)
             return nullptr;
+
+        // Check if the base is a pointer type
+        // For pointer access like p[i], the address is simply (p + i)
+        if (expr->array->kind == ASTNodeKind::IDENTIFIER)
+        {
+            auto id = std::dynamic_pointer_cast<IdentifierExpr>(expr->array);
+            auto var_sym = tac_gen.get_var(id->name);
+            
+            // If it's a pointer variable, calculate address directly
+            if (var_sym && var_sym->is_pointer)
+            {
+                // Generate pointer expression: p
+                auto ptr_exp = generate_expression(expr->array);
+                if (!ptr_exp || !ptr_exp->place)
+                {
+                    std::cerr << "Error: Failed to generate pointer expression for address" << std::endl;
+                    return nullptr;
+                }
+                
+                // Generate index expression: i
+                auto index_exp = generate_expression(expr->index);
+                if (!index_exp || !index_exp->place)
+                {
+                    std::cerr << "Error: Failed to generate index expression for address" << std::endl;
+                    return nullptr;
+                }
+                
+                // Calculate and return address: p + i
+                return tac_gen.do_bin(TAC_OP::ADD, ptr_exp, index_exp);
+            }
+        }
 
         // Check if all indices are constant - return address of the variable
         if (expr->all_constant_access())

@@ -382,10 +382,9 @@ func_call_expr: IDENTIFIER '(' arg_list ')'
 }
 ;
 
-assign_expr: IDENTIFIER '=' expression
+assign_expr: expression '=' expression
 {
-    auto target = ast_builder.make_identifier($1);
-    $$ = ast_builder.make_assign(target, $3);
+    $$ = ast_builder.make_assign($1, $3);
 }
 | expression '[' expression ']' '=' expression
 {
@@ -471,16 +470,9 @@ expression: const_expr
 {
     $$ = ast_builder.make_address_of($2);
 }
-| '*' IDENTIFIER %prec DEREF
+| '*' expression %prec DEREF
 {
-    auto id = ast_builder.make_identifier($2);
-    $$ = ast_builder.make_dereference(id);
-}
-| '*' IDENTIFIER '=' expression
-{
-    auto id = ast_builder.make_identifier($2);
-    auto deref = ast_builder.make_dereference(id);
-    $$ = ast_builder.make_assign(deref, $4);
+    $$ = ast_builder.make_dereference($2);
 }
 | '(' expression ')'
 {
