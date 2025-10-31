@@ -10,23 +10,20 @@ namespace twlm::ccpl::abstraction
         {
             field.offset = total_size;
             
-            // Calculate size based on type
-            // For now, use simple calculation: each basic type = 4 bytes
-            // Arrays and nested structs will contribute to size accordingly
-            // This is a simplified calculation - can be refined later
-            
             if (field.type)
             {
                 switch (field.type->kind)
                 {
+                    //int/char/ptr is 4b
                     case TypeKind::BASIC:
-                        total_size += 4; // 4 bytes for int/char (simplified)
+                        total_size += 4;
                         break;
                         
                     case TypeKind::POINTER:
-                        total_size += 4; // Pointer size
+                        total_size += 4;
                         break;
                         
+                    //array and struct should be calculated properly
                     case TypeKind::ARRAY:
                     {
                         // Calculate array total size

@@ -1030,6 +1030,10 @@ namespace twlm::ccpl::modules
         
         // Determine element size (for now, everything is 4 bytes/words in TAC)
         int element_size = 4;
+        if(base_data_type==DATA_TYPE::STRUCT){
+            auto struct_meta = tac_gen.get_struct_type(current_type->struct_name)->struct_metadata;
+            element_size = struct_meta->total_size;
+        }
         
         // Create and store metadata with base type
         auto metadata = std::make_shared<ArrayMetadata>(name, dimensions, base_data_type, element_size);
@@ -1038,7 +1042,9 @@ namespace twlm::ccpl::modules
         // Debug output
         std::cout << "Recorded array metadata: " << metadata->to_string() 
                   << " (stride[0]=" << metadata->get_stride(0) 
-                  << ", base_type=" << static_cast<int>(base_data_type) << ")" << std::endl;
+                  << ", base_type=" << static_cast<int>(base_data_type)
+                  << ", unit size=" << metadata->element_size
+                  << ")" << std::endl;
     }
 
     std::shared_ptr<ArrayMetadata> ASTToTACGenerator::get_array_metadata(const std::string& name) const
