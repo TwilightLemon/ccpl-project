@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include "tac_definitions.hh"
 
 namespace twlm::ccpl::abstraction
 {
@@ -14,11 +15,12 @@ namespace twlm::ccpl::abstraction
         std::string name;                    // Full variable name (e.g., "a1.a" or "arr")
         std::vector<int> dimensions;         // Dimension sizes from outer to inner (e.g., [5, 10] for char[5][10])
         int element_size;                    // Size of each element in bytes/words (usually 4 for int/char in this TAC)
+        DATA_TYPE base_type;                 // Base element type (e.g., CHAR for char[5][10])
         
-        ArrayMetadata() : element_size(4) {}
+        ArrayMetadata() : element_size(4), base_type(DATA_TYPE::UNDEF) {}
         
-        ArrayMetadata(const std::string& n, const std::vector<int>& dims, int elem_size = 4)
-            : name(n), dimensions(dims), element_size(elem_size) {}
+        ArrayMetadata(const std::string& n, const std::vector<int>& dims, DATA_TYPE btype, int elem_size = 4)
+            : name(n), dimensions(dims), element_size(elem_size), base_type(btype) {}
         
         /**
          * Get the total number of elements in the array

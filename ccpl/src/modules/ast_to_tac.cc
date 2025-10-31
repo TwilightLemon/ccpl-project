@@ -880,6 +880,13 @@ namespace twlm::ccpl::modules
         // Dereference to get the value
         auto result_exp = tac_gen.do_dereference(final_addr_exp);
         
+        // Set the correct data type from array metadata
+        if (result_exp && result_exp->place)
+        {
+            result_exp->place->data_type = metadata->base_type;
+            result_exp->data_type = metadata->base_type;
+        }
+        
         return result_exp;
     }
 
@@ -1018,16 +1025,20 @@ namespace twlm::ccpl::modules
         // After collection we have [10, 5], need to reverse to [5, 10]
         std::reverse(dimensions.begin(), dimensions.end());
         
+        // Get the base type (current_type is now the element type)
+        DATA_TYPE base_data_type = convert_type_to_data_type(current_type);
+        
         // Determine element size (for now, everything is 4 bytes/words in TAC)
         int element_size = 4;
         
-        // Create and store metadata
-        auto metadata = std::make_shared<ArrayMetadata>(name, dimensions, element_size);
+        // Create and store metadata with base type
+        auto metadata = std::make_shared<ArrayMetadata>(name, dimensions, base_data_type, element_size);
         array_metadata_map[name] = metadata;
         
         // Debug output
         std::cout << "Recorded array metadata: " << metadata->to_string() 
-                  << " (stride[0]=" << metadata->get_stride(0) << ")" << std::endl;
+                  << " (stride[0]=" << metadata->get_stride(0) 
+                  << ", base_type=" << static_cast<int>(base_data_type) << ")" << std::endl;
     }
 
     std::shared_ptr<ArrayMetadata> ASTToTACGenerator::get_array_metadata(const std::string& name) const
