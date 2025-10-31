@@ -897,7 +897,7 @@ std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
     
     // Calculate size if not already done
     if (metadata) {
-        metadata->calculate_size();
+        metadata->calculate_size(struct_types);
     }
     
     struct_types[name] = struct_sym;
