@@ -3,7 +3,9 @@
 #include <vector>
 #include <string>
 #include <functional>
+#include <map>
 #include "abstraction/ast_nodes.hh"
+#include "abstraction/array_metadata.hh"
 #include "tac.hh"
 
 namespace twlm::ccpl::modules
@@ -19,6 +21,9 @@ namespace twlm::ccpl::modules
         TACGenerator tac_gen;
         std::shared_ptr<Program> _program;
         std::shared_ptr<SYM> current_function;
+        
+        // Array metadata storage: maps array name to its metadata
+        std::map<std::string, std::shared_ptr<ArrayMetadata>> array_metadata_map;
         
     public:
         ASTToTACGenerator();
@@ -78,6 +83,10 @@ namespace twlm::ccpl::modules
         
         // find the first SYM of a expanded array..
         std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
+        
+        // Array metadata management
+        void record_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
+        std::shared_ptr<ArrayMetadata> get_array_metadata(const std::string& name) const;
 
     };
 
