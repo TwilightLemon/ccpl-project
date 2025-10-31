@@ -24,6 +24,7 @@ sources = [
   'src/modules/opt.cc',
   'src/modules/block.cc',
   'src/abstraction/ast_nodes.cc',
+  'src/abstraction/struct_metadata.cc',
   'src/modules/ast_builder.cc',
   'src/modules/ast_to_tac.cc',
   'src/modules/obj.cc',

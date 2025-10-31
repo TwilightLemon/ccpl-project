@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include "tac_definitions.hh"
+#include "struct_metadata.hh"
 
 namespace twlm::ccpl::abstraction
 {
@@ -26,7 +27,7 @@ namespace twlm::ccpl::abstraction
 
         // For struct types
         std::string struct_type_name; //refer to the struct type name of a variable
-        std::vector<std::tuple<std::string, DATA_TYPE, int>> struct_fields; // (field_name, type, offset) - preserves order
+        std::shared_ptr<StructTypeMetadata> struct_metadata; // Complete struct type metadata (not expanded)
 
         // For pointers
         bool is_pointer;

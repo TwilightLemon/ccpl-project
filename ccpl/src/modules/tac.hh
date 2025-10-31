@@ -56,7 +56,7 @@ namespace twlm::ccpl::modules
         
         // Struct operations
         std::shared_ptr<SYM> declare_struct_type(const std::string &name,
-                                                 const std::vector<std::pair<std::string, DATA_TYPE>>& fields);
+                                                 std::shared_ptr<StructTypeMetadata> metadata);
         std::shared_ptr<SYM> get_struct_type(const std::string &name);
         std::shared_ptr<TAC> do_member_access(std::shared_ptr<SYM> struct_var, const std::string& field_name);
 

@@ -155,39 +155,37 @@ namespace twlm::ccpl::modules
                                                  std::function<void(const std::string&, DATA_TYPE)> handler)
     {
         auto struct_type = tac_gen.get_struct_type(struct_name);
-        if (!struct_type)
+        if (!struct_type || !struct_type->struct_metadata)
         {
             std::cerr << "Error: Unknown struct type: " << struct_name << std::endl;
             return;
         }
 
-        for (const auto &field : struct_type->struct_fields)
+        // Recursively expand struct fields using metadata
+        for (const auto &field_meta : struct_type->struct_metadata->fields)
         {
-            std::string field_name = base_name + "." + std::get<0>(field);
-            DATA_TYPE field_type = std::get<1>(field);
-            handler(field_name, field_type);
-        }
-    }
-
-    void ASTToTACGenerator::extract_struct_fields(const std::shared_ptr<VarDecl> &field, std::vector<std::pair<std::string, DATA_TYPE>> &fields)
-    {
-        if (field->var_type && field->var_type->kind == TypeKind::ARRAY)
-        {
-            expand_array_elements(field->var_type, field->name,
-                                  [&fields](const auto &name, DATA_TYPE dtype)
-                                  {
-                                      fields.push_back({name, dtype});
-                                  });
-            return;
-        }
-
-        if (field->var_type && field->var_type->kind == TypeKind::STRUCT)
-        {
-            expand_struct_fields(field->var_type->struct_name, field->name,
-                                [&fields](const std::string& name, DATA_TYPE dtype)
-                                {
-                                    fields.push_back({name, dtype});
-                                });
+            std::string field_name = base_name + "." + field_meta.name;
+            
+            // Handle different field types
+            if (field_meta.type)
+            {
+                if (field_meta.type->kind == TypeKind::ARRAY)
+                {
+                    // Recursively expand array elements
+                    expand_array_elements(field_meta.type, field_name, handler);
+                }
+                else if (field_meta.type->kind == TypeKind::STRUCT)
+                {
+                    // Recursively expand nested struct
+                    expand_struct_fields(field_meta.type->struct_name, field_name, handler);
+                }
+                else
+                {
+                    // Basic type - add directly
+                    DATA_TYPE dtype = convert_type_to_data_type(field_meta.type);
+                    handler(field_name, dtype);
+                }
+            }
         }
     }
 
@@ -266,29 +264,18 @@ namespace twlm::ccpl::modules
         if (!decl)
             return;
 
-        std::vector<std::pair<std::string, DATA_TYPE>> fields;
+        // Create struct metadata with complete type information (no expansion)
+        auto metadata = std::make_shared<StructTypeMetadata>(decl->name);
+        
         for (const auto &field : decl->fields)
         {
-            if (field->var_type && field->var_type->kind == TypeKind::ARRAY)
-            {
-                expand_array_elements(field->var_type, field->name,
-                                      [&fields](const std::string &name, DATA_TYPE dtype)
-                                      {
-                                          fields.push_back({name, dtype});
-                                      });
-                continue;
-            }
-
-            DATA_TYPE field_type = convert_type_to_data_type(field->var_type);
-            if (field_type == DATA_TYPE::STRUCT)
-            {
-                extract_struct_fields(field, fields);
-                continue;
-            }
-            fields.push_back({field->name, field_type});
+            // Store complete type information including arrays, nested structs, etc.
+            StructFieldMetadata field_meta(field->name, field->var_type);
+            metadata->fields.push_back(field_meta);
         }
 
-        auto struct_type = tac_gen.declare_struct_type(decl->name, fields);
+        // Register struct type with metadata (no expansion at this point)
+        auto struct_type = tac_gen.declare_struct_type(decl->name, metadata);
     }
 
     // Statement Generation

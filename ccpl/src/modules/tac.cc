@@ -880,7 +880,7 @@ void TACGenerator::link_tac(std::shared_ptr<TAC> tac) {
 // ============ Struct Support ============
 
 std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
-                                                       const std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
+                                                       std::shared_ptr<StructTypeMetadata> metadata) {
     auto it = struct_types.find(name);
     if (it != struct_types.end()) {
         error("Struct type already declared: " + name);
@@ -892,10 +892,12 @@ std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
     struct_sym->name = name;
     struct_sym->scope = SYM_SCOPE::GLOBAL;
     
-    int offset = 0;
-    for (const auto& field : fields) {
-        struct_sym->struct_fields.push_back({field.first, field.second, offset});
-        offset += 4;
+    // Store the complete metadata instead of flattened fields
+    struct_sym->struct_metadata = metadata;
+    
+    // Calculate size if not already done
+    if (metadata) {
+        metadata->calculate_size();
     }
     
     struct_types[name] = struct_sym;
