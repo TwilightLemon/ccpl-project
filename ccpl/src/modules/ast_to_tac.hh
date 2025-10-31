@@ -87,6 +87,9 @@ namespace twlm::ccpl::modules
         // Array metadata management
         void record_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
         std::shared_ptr<ArrayMetadata> get_array_metadata(const std::string& name) const;
+        
+        // Generate array address without dereferencing (for assignment targets)
+        std::shared_ptr<EXP> generate_array_address(std::shared_ptr<ArrayAccessExpr> expr);
 
     };
 

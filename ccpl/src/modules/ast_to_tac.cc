@@ -685,19 +685,19 @@ namespace twlm::ccpl::modules
         // For array access assignment
         if (expr->target->kind == ASTNodeKind::ARRAY_ACCESS)
         {
-            auto target_exp = generate_array_access(std::dynamic_pointer_cast<ArrayAccessExpr>(expr->target));
-            if (!target_exp || !target_exp->place)
+            auto array_access_expr = std::dynamic_pointer_cast<ArrayAccessExpr>(expr->target);
+            
+            // Generate the address of the array element (without dereferencing)
+            auto addr_exp = generate_array_address(array_access_expr);
+            if (!addr_exp || !addr_exp->place)
             {
-                std::cerr << "Error: Failed to generate array access target" << std::endl;
+                std::cerr << "Error: Failed to generate array address for assignment" << std::endl;
                 return nullptr;
             }
 
-            // assign: target_exp = value_exp;
-            auto assign_tac = tac_gen.do_assign(target_exp->place, value_exp);
-            auto combined_tac = tac_gen.join_tac(target_exp->code, assign_tac);
-
-            // assign_expr
-            return tac_gen.mk_exp(target_exp->place, combined_tac);
+            // Use pointer assignment: *addr = value
+            auto assign_tac = tac_gen.do_pointer_assign(addr_exp, value_exp);
+            return tac_gen.mk_exp(value_exp->place, assign_tac);
         }
 
         // For dereference assignment: *ptr = value
@@ -1038,6 +1038,130 @@ namespace twlm::ccpl::modules
             return it->second;
         }
         return nullptr;
+    }
+
+    std::shared_ptr<EXP> ASTToTACGenerator::generate_array_address(std::shared_ptr<ArrayAccessExpr> expr)
+    {
+        if (!expr)
+            return nullptr;
+
+        // Check if all indices are constant - return address of the variable
+        if (expr->all_constant_access())
+        {
+            std::string base_name = expr->to_string();
+            if (!base_name.empty())
+            {
+                auto elem_var = tac_gen.get_var(base_name);
+                if (!elem_var)
+                {
+                    std::cerr << "Error: Array element variable not found: " << base_name << std::endl;
+                    return nullptr;
+                }
+                // Return the address of the variable
+                auto var_exp = tac_gen.mk_exp(elem_var, nullptr);
+                return tac_gen.do_address_of(var_exp);
+            }
+        }
+
+        // Dynamic address calculation for multi-dimensional arrays
+        
+        // Collect all array access expressions from inner to outer
+        std::vector<std::shared_ptr<ArrayAccessExpr>> access_chain;
+        std::shared_ptr<Expression> current = expr;
+        
+        while (current && current->kind == ASTNodeKind::ARRAY_ACCESS)
+        {
+            auto arr_access = std::dynamic_pointer_cast<ArrayAccessExpr>(current);
+            access_chain.push_back(arr_access);
+            current = arr_access->array;
+        }
+        
+        // Reverse to get outer-to-inner order
+        std::reverse(access_chain.begin(), access_chain.end());
+        
+        // Determine the base array name
+        std::string base_array_name;
+        if (current->kind == ASTNodeKind::IDENTIFIER)
+        {
+            auto id = std::dynamic_pointer_cast<IdentifierExpr>(current);
+            base_array_name = id->name;
+        }
+        else if (current->kind == ASTNodeKind::MEMBER_ACCESS)
+        {
+            auto member = std::dynamic_pointer_cast<MemberAccessExpr>(current);
+            base_array_name = member->to_string();
+        }
+        else
+        {
+            std::cerr << "Error: Unsupported array base type in address calculation" << std::endl;
+            return nullptr;
+        }
+        
+        // Get array metadata
+        auto metadata = get_array_metadata(base_array_name);
+        if (!metadata)
+        {
+            std::cerr << "Error: No metadata found for array: " << base_array_name << std::endl;
+            return nullptr;
+        }
+        
+        // Calculate total offset: offset = i0*stride0 + i1*stride1 + i2*stride2 + ...
+        std::shared_ptr<EXP> total_offset = nullptr;
+        
+        for (size_t dim = 0; dim < access_chain.size(); ++dim)
+        {
+            // Generate index expression for this dimension
+            auto index_exp = generate_expression(access_chain[dim]->index);
+            if (!index_exp || !index_exp->place)
+            {
+                std::cerr << "Error: Failed to generate index for dimension " << dim << std::endl;
+                return nullptr;
+            }
+            
+            // Get stride for this dimension
+            int stride = metadata->get_stride(dim);
+            
+            // Calculate: index * stride
+            std::shared_ptr<EXP> scaled_index;
+            if (stride == 1)
+            {
+                scaled_index = index_exp;
+            }
+            else
+            {
+                auto stride_sym = tac_gen.mk_const(stride);
+                auto stride_exp = tac_gen.mk_exp(stride_sym, nullptr);
+                stride_exp->data_type = DATA_TYPE::INT;
+                scaled_index = tac_gen.do_bin(TAC_OP::MUL, index_exp, stride_exp);
+            }
+            
+            // Add to total offset
+            if (!total_offset)
+            {
+                total_offset = scaled_index;
+            }
+            else
+            {
+                total_offset = tac_gen.do_bin(TAC_OP::ADD, total_offset, scaled_index);
+            }
+        }
+        
+        // Get the base address (address of first element)
+        auto first_elem = find_array_first_element(base_array_name);
+        if (!first_elem)
+        {
+            std::cerr << "Error: Cannot find first element of array: " << base_array_name << std::endl;
+            return nullptr;
+        }
+        
+        // Get address of first element
+        auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
+        auto base_addr_exp = tac_gen.do_address_of(first_elem_exp);
+        
+        // Calculate final address: base_addr + total_offset
+        auto final_addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_addr_exp, total_offset);
+        
+        return final_addr_exp;
     }
 
 } // namespace twlm::ccpl::modules
