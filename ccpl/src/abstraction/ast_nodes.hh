@@ -245,6 +245,7 @@ namespace twlm::ccpl::abstraction
               object(obj), member_name(member), is_pointer_access(is_ptr) {}
         
         std::string to_string() const override;
+        bool all_constant_access() const;
     };
 
     struct AddressOfExpr : public Expression {

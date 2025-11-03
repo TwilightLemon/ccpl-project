@@ -1,27 +1,21 @@
-# 测试动态数组访问
 int main() {
-    int arr[5];
-    int i;
-    int sum;
-    
-    # 初始化数组
-    arr[0] = 10;
-    arr[1] = 20;
-    arr[2] = 30;
-    arr[3] = 40;
-    arr[4] = 50;
-    
-    # 使用动态索引访问数组
-    sum = 0;
-    i = 0;
-    int *ac;
-    while (i < 5) {
-        ac=arr + i;
-        sum = sum + *ac;
-        i = i + 1;
+    int arr[5][5];
+    int i, j;
+    for (i = 0; i < 5; i=i+1) {
+        for (j = 0; j < 5; j=j+1) {
+            arr[i][j] = i * 10 + j;
+        }
     }
-    
-    output sum;  # 应该输出150
+
+    int sum;
+    sum = 0;
+    for (i = 0; i < 5; i=i+1) {
+        for (j = 0; j < 5; j=j+1) {
+            sum = sum + arr[i][j];
+        }
+    }
+
+    output sum;
     
     return 0;
 }

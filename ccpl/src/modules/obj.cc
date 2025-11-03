@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <ctime>
 #include <cstdlib>
+#include <stdexcept>
 
 using namespace twlm::ccpl::modules;
 using namespace twlm::ccpl::abstraction;
@@ -195,13 +196,15 @@ int ObjGenerator::reg_alloc(std::shared_ptr<SYM> s)
 void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
-    int reg_b = -1, reg_c = -1;
+    int reg_b = reg_alloc(b);
+    int reg_c = reg_alloc(c);
 
-    // Ensure different registers
-    while (reg_b == reg_c)
+    // If they're the same register (same variable), we need to use a temporary
+    if (reg_b == reg_c)
     {
-        reg_b = reg_alloc(b);
-        reg_c = reg_alloc(c);
+        // Load c into a temporary register
+        output << "\tLOD R" << R_TP << ",R" << reg_c << "\n";
+        reg_c = R_TP;
     }
 
     output << "\t" << op << " R" << reg_b << ",R" << reg_c << "\n";
@@ -211,13 +214,15 @@ void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
 void ObjGenerator::asm_cmp(TAC_OP op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
-    int reg_b = -1, reg_c = -1;
+    int reg_b = reg_alloc(b);
+    int reg_c = reg_alloc(c);
 
-    // Ensure different registers
-    while (reg_b == reg_c)
+    // If they're the same register (same variable), we need to use a temporary
+    if (reg_b == reg_c)
     {
-        reg_b = reg_alloc(b);
-        reg_c = reg_alloc(c);
+        // Load c into a temporary register
+        output << "\tLOD R" << R_TP << ",R" << reg_c << "\n";
+        reg_c = R_TP;
     }
 
     // Subtract and test
@@ -532,28 +537,29 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
 
     case TAC_OP::INPUT:
         r = reg_alloc(tac->a);
-        output << "\tITI\n";
+        if(tac->a->data_type==DATA_TYPE::CHAR)
+            output << "\tITC\n";
+        else if(tac->a->data_type==DATA_TYPE::INT)
+            output << "\tITI\n";
+        else throw std::runtime_error("Unsupported data type for INPUT");
         output << "\tLOD R" << r << ",R" << R_IO << "\n";
         reg_desc[r].state = RegState::MODIFIED;
         return;
 
     case TAC_OP::OUTPUT:
+        r = reg_alloc(tac->a);
+        output << "\tLOD R" << R_IO << ",R" << r << "\n";
+        
         if (tac->a->type == SYM_TYPE::CONST_INT||
             (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::INT))
         {
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTI\n";
         }else  if (tac->a->type == SYM_TYPE::CONST_CHAR ||
             (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::CHAR )){
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTC\n";
         }
         else if (tac->a->type == SYM_TYPE::TEXT)
         {
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTS\n";
         }
         return;
@@ -595,17 +601,30 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::VAR:
+    {
+        int var_size = 4;
+        
+        if (tac->a->is_array && tac->a->array_metadata)
+        {
+            var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
+        }
+        else if (tac->a->data_type == DATA_TYPE::STRUCT && tac->a->struct_metadata)
+        {
+            var_size = tac->a->struct_metadata->total_size;
+        }
+        
         if (tac->a->scope == SYM_SCOPE::LOCAL)
         {
             tac->a->offset = tof;
-            tof += 4;
+            tof += var_size;
         }
         else
         {
             tac->a->offset = tos;
-            tos += 4;
+            tos += var_size;
         }
         return;
+    }
 
     case TAC_OP::RETURN:
         asm_return(tac->a);
@@ -616,127 +635,148 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::ADDR:
-        // a = &b : Get address of variable b and store in a
-        // IMPORTANT: Before taking the address, we must ensure the variable is in memory
-        // If it's in a register with modified state, write it back first
-        // Also write back all array elements if this is an array element (arr[0], arr[1], etc.)
         {
-            std::string var_name = tac->b->name;
-            size_t bracket_pos = var_name.find('[');
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var == tac->b && reg_desc[i].state == RegState::MODIFIED)
+                {
+                    asm_write_back(i);
+                    break;
+                }
+            }
             
-            if (bracket_pos != std::string::npos) {
-                // This is an array element, write back all elements of this array
-                std::string array_prefix = var_name.substr(0, bracket_pos + 1); // e.g., "arr["
-                
-                for (int i = R_GEN; i < R_NUM; i++) {
-                    if (reg_desc[i].var != nullptr && 
-                        reg_desc[i].var->name.find(array_prefix) == 0 &&
-                        reg_desc[i].state == RegState::MODIFIED) {
-                        asm_write_back(i);
-                        // Don't break - continue to write back all array elements
-                    }
-                }
-            } else {
-                // Single variable, just write it back if modified
-                for (int i = R_GEN; i < R_NUM; i++) {
-                    if (reg_desc[i].var == tac->b && reg_desc[i].state == RegState::MODIFIED) {
-                        asm_write_back(i);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // For local variables: address = BP + offset
-        // For global variables: address = STATIC + offset
-        
-        // Find an empty register (don't use reg_alloc as it will try to load the value)
-        r = -1;
-        for (int i = R_GEN; i < R_NUM; i++) {
-            if (reg_desc[i].var == nullptr) {
-                r = i;
-                break;
-            }
-        }
-        if (r == -1) {
-            // All registers occupied, write back one and use it
-            for (int i = R_GEN; i < R_NUM; i++) {
-                if (reg_desc[i].state == RegState::UNMODIFIED) {
+            r = -1;
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var == nullptr)
+                {
                     r = i;
                     break;
                 }
             }
-            if (r == -1) {
-                // Pick the first general register
-                r = R_GEN;
-                asm_write_back(r);
+            
+            if (r == -1)
+            {
+                for (int i = R_GEN; i < R_NUM; i++)
+                {
+                    if (reg_desc[i].state == RegState::UNMODIFIED)
+                    {
+                        r = i;
+                        break;
+                    }
+                }
+                if (r == -1)
+                {
+                    r = R_GEN;
+                    asm_write_back(r);
+                }
             }
-        }
-        
-        if (tac->b->scope == SYM_SCOPE::LOCAL) {
-            output << "\tLOD R" << r << ",R" << R_BP << "\n";
-            if (tac->b->offset >= 0) {
+            
+            if (tac->b->scope == SYM_SCOPE::LOCAL)
+            {
+                output << "\tLOD R" << r << ",R" << R_BP << "\n";
+                if (tac->b->offset >= 0)
+                    output << "\tADD R" << r << "," << tac->b->offset << "\n";
+                else
+                    output << "\tSUB R" << r << "," << (-tac->b->offset) << "\n";
+            }
+            else
+            {
+                output << "\tLOD R" << r << ",STATIC\n";
                 output << "\tADD R" << r << "," << tac->b->offset << "\n";
-            } else {
-                output << "\tSUB R" << r << "," << (-tac->b->offset) << "\n";
             }
-        } else {
-            // Global variable
-            output << "\tLOD R" << r << ",STATIC\n";
-            output << "\tADD R" << r << "," << tac->b->offset << "\n";
+            
+            rdesc_fill(r, tac->a, RegState::MODIFIED);
         }
-        
-        rdesc_fill(r, tac->a, RegState::MODIFIED);
         return;
 
     case TAC_OP::LOAD_PTR:
         // a = *b : Load value from address stored in b
         {
             int r_ptr = reg_alloc(tac->b);  // Load pointer value
-            int r_val = reg_alloc(tac->a);  // Result register
             
-            // Ensure they're different registers
-            if (r_ptr == r_val) {
-                // Allocate another register for result
-                rdesc_clear(r_val);
-                r_val = reg_alloc(tac->a);
+            // Find a free register for the result (don't load tac->a, it's the result!)
+            int r_val = -1;
+            for (int i = R_GEN; i < R_NUM; i++) {
+                if (reg_desc[i].var == nullptr) {
+                    r_val = i;
+                    break;
+                }
+            }
+            
+            if (r_val == -1) {
+                // No free register, find an unmodified one
+                for (int i = R_GEN; i < R_NUM; i++) {
+                    if (reg_desc[i].state == RegState::UNMODIFIED && i != r_ptr) {
+                        r_val = i;
+                        rdesc_clear(r_val);
+                        break;
+                    }
+                }
+            }
+            
+            if (r_val == -1) {
+                // All registers are modified, write back one that's not r_ptr
+                for (int i = R_GEN; i < R_NUM; i++) {
+                    if (i != r_ptr) {
+                        r_val = i;
+                        asm_write_back(r_val);
+                        rdesc_clear(r_val);
+                        break;
+                    }
+                }
             }
             
             // Load value from address in r_ptr
-            output << "\tLOD R" << r_val << ",(R" << r_ptr << ")\n";
+            if (tac->a->data_type == DATA_TYPE::CHAR) {
+                output << "\tLDC R" << r_val << ",(R" << r_ptr << ")\n";
+            } else {
+                output << "\tLOD R" << r_val << ",(R" << r_ptr << ")\n";
+            }
             rdesc_fill(r_val, tac->a, RegState::MODIFIED);
         }
         return;
 
     case TAC_OP::STORE_PTR:
-        // *a = b : Store value b to address stored in a
         {
-            int r_ptr = reg_alloc(tac->a);  // Load pointer value
-            int r_val = reg_alloc(tac->b);  // Load value to store
+            int r_ptr = reg_alloc(tac->a);
+            int r_val = reg_alloc(tac->b);
             
-            // Ensure they're different registers
-            if (r_ptr == r_val) {
-                // Need to handle this case
-                // Store value in a temporary location first
-                output << "\tLOD R" << R_TP << ",R" << r_val << "\n";
-                r_val = R_TP;
+            if (r_ptr == r_val)
+            {
+                // The second reg_alloc overwrote the first register
+                // Need to reload the pointer address from memory
+                r_ptr = R_TP;
+                if (tac->a->scope == SYM_SCOPE::LOCAL)
+                {
+                    output << "\tLOD R" << r_ptr << ",(R" << R_BP << "+" << tac->a->offset << ")\n";
+                }
+                else
+                {
+                    output << "\tLOD R" << R_TP << ",STATIC\n";
+                    output << "\tLOD R" << r_ptr << ",(R" << R_TP << "+" << tac->a->offset << ")\n";
+                }
             }
             
-            // Store value to address in r_ptr
-            output << "\tSTO (R" << r_ptr << "),R" << r_val << "\n";
+            if (tac->b->data_type == DATA_TYPE::CHAR)
+                output << "\tSTC (R" << r_ptr << "),R" << r_val << "\n";
+            else
+                output << "\tSTO (R" << r_ptr << "),R" << r_val << "\n";
             
-            // IMPORTANT: After storing through a pointer, we don't know which variable
-            // was modified, so we must invalidate all register descriptors except
-            // constants, because any variable in memory might have been changed
-            for (int i = R_GEN; i < R_NUM; i++) {
-                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR) {
-                    // Write back if modified
-                    if (reg_desc[i].state == RegState::MODIFIED && i != r_val) {
-                        asm_write_back(i);
-                    }
-                    // Clear the descriptor
-                    rdesc_clear(i);
+            // After pointer store, invalidate all registers since we don't know what was modified
+            // Write back all modified variables first, then clear all descriptors
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR && 
+                    reg_desc[i].state == RegState::MODIFIED)
+                {
+                    asm_write_back(i);
                 }
+            }
+            // Clear all register descriptors to force reload from memory
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                rdesc_clear(i);
             }
         }
         return;

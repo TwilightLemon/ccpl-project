@@ -1,6 +1,7 @@
 main()
 {
-    char a,b,c,d;
+    char a,*pa,b,c,d;
+    char *ptr;
     input d;
     c = 'c';
     b = 'b';
@@ -14,7 +15,12 @@ main()
     output d;
     output "\n";
 
-    a = a + 1;
+    pa = &a;
+    *pa = 'A';
+    output a;
+
+    ptr = pa;
+    *ptr = 'B';
     output a;
     output "\n";
 }

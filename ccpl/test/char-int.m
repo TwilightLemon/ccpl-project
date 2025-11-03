@@ -1,5 +1,6 @@
 main()
 {
+    int i,j,k,l;
     char a,b,c,d;
     input d;
     c = 'c';
@@ -14,7 +15,16 @@ main()
     output d;
     output "\n";
 
-    a = a + 1;
-    output a;
+    i = a;
+    j = b;
+    k = c;
+    l = d;
+
+    if(0) { output "\n"; }
+
+    output i;
+    output j;
+    output k;
+    output l;
     output "\n";
 }

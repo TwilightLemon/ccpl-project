@@ -231,9 +231,44 @@ std::shared_ptr<TAC> TACGenerator::join_tac(std::shared_ptr<TAC> c1, std::shared
     return c2;
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype, bool is_pointer) {
+std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype, bool is_pointer, DATA_TYPE base_type) {
     auto var = mk_var(name, dtype);
     var->is_pointer = is_pointer;
+    if (base_type!=DATA_TYPE::UNDEF)
+    {
+        var->base_type = base_type;
+    }
+    
+    return mk_tac(TAC_OP::VAR, var);
+}
+
+std::shared_ptr<TAC> TACGenerator::declare_array(const std::string& name, std::shared_ptr<ArrayMetadata> metadata) {
+    if (!metadata) {
+        error("Array metadata is required for array declaration");
+        return nullptr;
+    }
+    
+    // Create array variable with metadata
+    auto var = mk_var(name, DATA_TYPE::INT); // Arrays are represented by their base address (INT/pointer)
+    var->is_array = true;
+    var->array_metadata = metadata;
+    
+    return mk_tac(TAC_OP::VAR, var);
+}
+
+std::shared_ptr<TAC> TACGenerator::declare_struct_var(const std::string& name, const std::string& struct_type_name) {
+    // Look up struct type
+    auto struct_type = get_struct_type(struct_type_name);
+    if (!struct_type || !struct_type->struct_metadata) {
+        error("Unknown struct type: " + struct_type_name);
+        return nullptr;
+    }
+    
+    // Create struct variable with metadata
+    auto var = mk_var(name, DATA_TYPE::STRUCT);
+    var->struct_type_name = struct_type_name;
+    var->struct_metadata = struct_type->struct_metadata;
+    
     return mk_tac(TAC_OP::VAR, var);
 }
 
@@ -880,7 +915,7 @@ void TACGenerator::link_tac(std::shared_ptr<TAC> tac) {
 // ============ Struct Support ============
 
 std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
-                                                       const std::vector<std::pair<std::string, DATA_TYPE>>& fields) {
+                                                       std::shared_ptr<StructTypeMetadata> metadata) {
     auto it = struct_types.find(name);
     if (it != struct_types.end()) {
         error("Struct type already declared: " + name);
@@ -892,10 +927,12 @@ std::shared_ptr<SYM> TACGenerator::declare_struct_type(const std::string& name,
     struct_sym->name = name;
     struct_sym->scope = SYM_SCOPE::GLOBAL;
     
-    int offset = 0;
-    for (const auto& field : fields) {
-        struct_sym->struct_fields.push_back({field.first, field.second, offset});
-        offset += 4;
+    // Store the complete metadata instead of flattened fields
+    struct_sym->struct_metadata = metadata;
+    
+    // Calculate size if not already done
+    if (metadata) {
+        metadata->calculate_size(struct_types);
     }
     
     struct_types[name] = struct_sym;
@@ -909,28 +946,6 @@ std::shared_ptr<SYM> TACGenerator::get_struct_type(const std::string& name) {
         return nullptr;
     }
     return it->second;
-}
-
-std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_var, 
-                                                    const std::string& field_name) {
-    // Note: This function is deprecated since TAC now uses flattened variable names
-    // Member access like p1.x is represented as a single variable "p1.x"
-    // This function is kept for backward compatibility but should not be used
-    
-    if (!struct_var) {
-        error("Invalid struct variable in member access");
-        return nullptr;
-    }
-    
-    std::string field_var_name = struct_var->name + "." + field_name;
-    auto field_var = get_var(field_var_name);
-    
-    if (!field_var) {
-        error("Field variable not found: " + field_var_name);
-        return nullptr;
-    }
-    
-    return nullptr;
 }
 
 // ============ Pointer Operations ============
@@ -961,10 +976,13 @@ std::shared_ptr<EXP> TACGenerator::do_dereference(std::shared_ptr<EXP> exp) {
         error("Invalid expression for dereference operation");
         return nullptr;
     }
+
+    DATA_TYPE deref_type = DATA_TYPE::INT;
+    if (exp->place->is_pointer && exp->place->base_type != DATA_TYPE::UNDEF) {
+        deref_type = exp->place->base_type;
+    }
     
-    // Dereference operation: *ptr
-    // We need to load the value from the address stored in ptr
-    auto temp = mk_tmp(DATA_TYPE::INT); // Assume dereferenced type is INT for now
+    auto temp = mk_tmp(deref_type);
     auto temp_decl = mk_tac(TAC_OP::VAR, temp);
     temp_decl->prev = exp->code;
     
@@ -972,7 +990,7 @@ std::shared_ptr<EXP> TACGenerator::do_dereference(std::shared_ptr<EXP> exp) {
     deref_tac->prev = temp_decl;
     
     auto result = mk_exp(temp, deref_tac);
-    result->data_type = DATA_TYPE::INT; // For simplicity, assume INT
+    result->data_type = deref_type;
     return result;
 }
 

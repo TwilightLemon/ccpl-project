@@ -2,3 +2,5 @@
 /ccpl/test/*.s
 /.vscode/settings.json
 /asm-machine/build/*
+/*.o
+/*.s

@@ -83,29 +83,40 @@ namespace twlm::ccpl::abstraction
     }
 
     bool ArrayAccessExpr::all_constant_access() const{
-        const ArrayAccessExpr* cur = this;
-        bool all_constant = true;
-        while (cur)
-        {
-            if (cur->index->kind != ASTNodeKind::CONST_INT)
-            {
-                all_constant = false;
-                break;
-            }
-            if (cur->array->kind == ASTNodeKind::ARRAY_ACCESS)
-            {
-                cur = dynamic_cast<const ArrayAccessExpr*>(cur->array.get());
-            }
-            else
-            {
-                break;
-            }
+        if(this->index->kind != ASTNodeKind::CONST_INT){
+            return false;
         }
-        return all_constant;
+        if(this->array->kind == ASTNodeKind::IDENTIFIER){
+            return true;
+        }
+
+        if(this->array->kind == ASTNodeKind::ARRAY_ACCESS){
+            const ArrayAccessExpr* cur = dynamic_cast<const ArrayAccessExpr*>(this->array.get());
+            return cur->all_constant_access();
+        }else if(this->array->kind == ASTNodeKind::MEMBER_ACCESS){
+            const MemberAccessExpr* cur = dynamic_cast<const MemberAccessExpr*>(this->array.get());
+            return cur->all_constant_access();
+        }
+        return true;
     }
 
     std::string MemberAccessExpr::to_string() const {
         return object->to_string() + (is_pointer_access ? "->" : ".") + member_name;
+    }
+
+    bool MemberAccessExpr::all_constant_access() const{
+        if(this->object->kind == ASTNodeKind::IDENTIFIER){
+            return true;
+        }
+
+        if(this->object->kind == ASTNodeKind::ARRAY_ACCESS){
+            const ArrayAccessExpr* cur = dynamic_cast<const ArrayAccessExpr*>(this->object.get());
+            return cur->all_constant_access();
+        }else if(this->object->kind == ASTNodeKind::MEMBER_ACCESS){
+            const MemberAccessExpr* cur = dynamic_cast<const MemberAccessExpr*>(this->object.get());
+            return cur->all_constant_access();
+        }
+        return true;
     }
 
     std::string AddressOfExpr::to_string() const {

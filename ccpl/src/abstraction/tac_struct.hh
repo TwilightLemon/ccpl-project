@@ -7,6 +7,8 @@
 #include <iostream>
 #include <sstream>
 #include "tac_definitions.hh"
+#include "struct_metadata.hh"
+#include "array_metadata.hh"
 
 namespace twlm::ccpl::abstraction
 {
@@ -25,15 +27,20 @@ namespace twlm::ccpl::abstraction
         DATA_TYPE return_type;
 
         // For struct types
-        std::string struct_type_name; //refer to the struct type name of a variable
-        std::vector<std::tuple<std::string, DATA_TYPE, int>> struct_fields; // (field_name, type, offset) - preserves order
+        std::string struct_type_name;
+        std::shared_ptr<StructTypeMetadata> struct_metadata; // Complete struct type metadata (not expanded)
+
+        // For arrays
+        bool is_array;
+        std::shared_ptr<ArrayMetadata> array_metadata; // Array dimension and size info
 
         // For pointers
         bool is_pointer;
+        DATA_TYPE base_type;
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
-                return_type(DATA_TYPE::UNDEF), is_pointer(false) {}
+                return_type(DATA_TYPE::UNDEF), is_array(false), is_pointer(false) {}
 
         std::string to_string() const
         {
@@ -133,7 +140,27 @@ namespace twlm::ccpl::abstraction
                 break;
             case TAC_OP::VAR:
                 oss << "var " << a->to_string();
-                if (a->data_type != DATA_TYPE::UNDEF)
+                if (a->is_array && a->array_metadata)
+                {
+                    oss << " : array";
+                    if (a->array_metadata->base_type == DATA_TYPE::STRUCT)
+                    {
+                        oss << " of struct " << a->array_metadata->struct_type_name;
+                    }
+                    else
+                    {
+                        oss << " of " << data_type_to_string(a->array_metadata->base_type);
+                    }
+                }
+                else if (a->data_type == DATA_TYPE::STRUCT)
+                {
+                    oss << " : struct";
+                    if (!a->struct_type_name.empty())
+                    {
+                        oss << " " << a->struct_type_name;
+                    }
+                }
+                else if (a->data_type != DATA_TYPE::UNDEF)
                 {
                     oss << " : " << data_type_to_string(a->data_type);
                 }

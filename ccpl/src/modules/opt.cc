@@ -13,10 +13,12 @@ bool TACOptimizer::get_const_value(std::shared_ptr<SYM> sym, int &value) const
 {
     if (!sym)
         return false;
-    if ((sym->type == SYM_TYPE::CONST_INT && sym->data_type == DATA_TYPE::INT) ||
-        (sym->type == SYM_TYPE::CONST_CHAR && sym->data_type == DATA_TYPE::CHAR))
+    if (sym->type == SYM_TYPE::CONST_INT && sym->data_type == DATA_TYPE::INT)
     {
         value = std::get<int>(sym->value);
+        return true;
+    }else if(sym->type == SYM_TYPE::CONST_CHAR && sym->data_type == DATA_TYPE::CHAR){
+        value = std::get<char>(sym->value);
         return true;
     }
     return false;

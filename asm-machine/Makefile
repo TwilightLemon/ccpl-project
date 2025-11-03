@@ -1,6 +1,7 @@
 all: asm machine
 
 asm: asm.l asm.y inst.h
+	mkdir -p build
 	lex -o build/asm.l.c asm.l
 	yacc -d -o build/asm.y.c asm.y
 	gcc -g3 -I. build/asm.l.c build/asm.y.c -o build/asm
