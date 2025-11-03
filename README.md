@@ -1,5 +1,7 @@
 # ccpl-project (Experimental)
 A simple C-style programming language compiler written in C++ with yacc and bison using custom assembly code and virtual machine.
+> This project is for educational purposes only and is not intended for production use.
+> In a word, this is a coursework of twlm🐱.
 
 ## Environment Setup
 Tested on Ubuntu 24.04 LTS WSL2.  
@@ -31,6 +33,10 @@ Tested on Ubuntu 24.04 LTS WSL2.
     make test=xxx
     ```
     where `xxx` is the name of the test file without extension.
+
+## Convention
+1. All variables are stored in the stack segment!!! Because there is not a memory management module (like `malloc`) yet.
+2. Only basic type is supported in function parameters and return values.
 
 ## The ccpl Language
 
@@ -297,33 +303,45 @@ int compute(int a, int b) {
 ### Complete Example
 
 ```c
-struct Student {
-    int id;
-    int score;
+struct BB{
+    char q[2];
 };
+struct A{
+    int id;
+    char a[4][5];
+    struct BB b[2];
+};
+int main(){
+    struct A a1[2];
+    int i,j,k;
+    i=0;j=2;k=3;
 
-int max(int a, int b) {
-    if (a > b) {
-        return a;
-    } else {
-        return b;
-    }
-}
+    a1[0].a[2][3]='z';
+    output a1[0].a[2][3];
 
-main() {
-    struct Student s;
-    int result;
-    
-    input s.id;
-    input s.score;
-    
-    result = max(s.id, s.score);
-    output "Maximum: ";
-    output result;
-    output "\n";
-    
+    char *p;
+    p=&a1[i].a[j][k];
+    *p = 'q';
+    output a1[i].a[2][3];
+    #*p='R';
+    output *p;
+    #*p = 'w';
+    output a1[i].a[j][k];
     return 0;
 }
 ```
-## Convention
+Expected Output: `zqRw`.
+
+## The ccpl Compiler Architecture
+
+The ccpl compiler is a multi-stage compiler that transforms ccpl source code into custom assembly code for execution on a custom virtual machine. The architecture follows a classic compiler pipeline with modern optimization capabilities.
+
+### Compilation Pipeline
+
+The compilation process consists of five main phases:
+
+```
+Source Code (.m) → Lexical Analysis → Syntax Analysis → Abstract Syntax Tree (AST)
+ → Three-Address Code (TAC) → Assembly Code (.s) → Machine Code (.o)
+```
 ...
