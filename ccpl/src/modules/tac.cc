@@ -231,9 +231,14 @@ std::shared_ptr<TAC> TACGenerator::join_tac(std::shared_ptr<TAC> c1, std::shared
     return c2;
 }
 
-std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype, bool is_pointer) {
+std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYPE dtype, bool is_pointer, DATA_TYPE base_type) {
     auto var = mk_var(name, dtype);
     var->is_pointer = is_pointer;
+    if (base_type!=DATA_TYPE::UNDEF)
+    {
+        var->base_type = base_type;
+    }
+    
     return mk_tac(TAC_OP::VAR, var);
 }
 
@@ -963,10 +968,13 @@ std::shared_ptr<EXP> TACGenerator::do_dereference(std::shared_ptr<EXP> exp) {
         error("Invalid expression for dereference operation");
         return nullptr;
     }
+
+    DATA_TYPE deref_type = DATA_TYPE::INT;
+    if (exp->place->is_pointer && exp->place->base_type != DATA_TYPE::UNDEF) {
+        deref_type = exp->place->base_type;
+    }
     
-    // Dereference operation: *ptr
-    // We need to load the value from the address stored in ptr
-    auto temp = mk_tmp(DATA_TYPE::INT); // Assume dereferenced type is INT for now
+    auto temp = mk_tmp(deref_type);
     auto temp_decl = mk_tac(TAC_OP::VAR, temp);
     temp_decl->prev = exp->code;
     
@@ -974,7 +982,7 @@ std::shared_ptr<EXP> TACGenerator::do_dereference(std::shared_ptr<EXP> exp) {
     deref_tac->prev = temp_decl;
     
     auto result = mk_exp(temp, deref_tac);
-    result->data_type = DATA_TYPE::INT; // For simplicity, assume INT
+    result->data_type = deref_type;
     return result;
 }
 

@@ -36,11 +36,11 @@ namespace twlm::ccpl::modules
         switch (decl->kind)
         {
         case ASTNodeKind::VAR_DECL:
-            {
-                auto tac = generate_var_decl(std::dynamic_pointer_cast<VarDecl>(decl));
-                tac_gen.link_tac(tac);
-            }
-            break;
+        {
+            auto tac = generate_var_decl(std::dynamic_pointer_cast<VarDecl>(decl));
+            tac_gen.link_tac(tac);
+        }
+        break;
         case ASTNodeKind::FUNC_DECL:
             generate_func_decl(std::dynamic_pointer_cast<FuncDecl>(decl));
             break;
@@ -62,7 +62,7 @@ namespace twlm::ccpl::modules
         {
             // Record array metadata before expanding
             record_array_metadata(decl->name, decl->var_type);
-            
+
             std::shared_ptr<TAC> result_tac = nullptr;
             expand_array_elements(decl->var_type, decl->name,
                                   [this, &result_tac](const auto &name, DATA_TYPE dtype)
@@ -76,14 +76,14 @@ namespace twlm::ccpl::modules
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT)
         {
             std::shared_ptr<TAC> result_tac = nullptr;
-            
+
             expand_struct_fields(decl->var_type->struct_name, decl->name,
-                                [this, &result_tac](const std::string& field_name, DATA_TYPE field_type)
-                                {
-                                    auto field_var_tac = tac_gen.declare_var(field_name, field_type);
-                                    result_tac = tac_gen.join_tac(result_tac, field_var_tac);
-                                });
-            
+                                 [this, &result_tac](const std::string &field_name, DATA_TYPE field_type)
+                                 {
+                                     auto field_var_tac = tac_gen.declare_var(field_name, field_type);
+                                     result_tac = tac_gen.join_tac(result_tac, field_var_tac);
+                                 });
+
             if (decl->init_value)
             {
                 std::cerr << "Warning: Struct initialization not yet supported" << std::endl;
@@ -91,10 +91,13 @@ namespace twlm::ccpl::modules
             return result_tac;
         }
 
-        //basic type
-        DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
         bool is_pointer = (decl->var_type && decl->var_type->kind == TypeKind::POINTER);
-        auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer);
+        DATA_TYPE dtype = convert_type_to_data_type(decl->var_type);
+        DATA_TYPE base_type = DATA_TYPE::UNDEF;
+        if(is_pointer){
+            base_type = convert_type_to_data_type(decl->var_type->base_type);
+        }
+        auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer, base_type);
 
         if (decl->init_value && current_function)
         {
@@ -125,11 +128,11 @@ namespace twlm::ccpl::modules
             if (param->param_type && param->param_type->kind == TypeKind::STRUCT)
             {
                 expand_struct_fields(param->param_type->struct_name, param->name,
-                                    [this, &param_code](const std::string& field_name, DATA_TYPE field_type)
-                                    {
-                                        auto field_param_tac = tac_gen.declare_para(field_name, field_type);
-                                        param_code = tac_gen.join_tac(param_code, field_param_tac);
-                                    });
+                                     [this, &param_code](const std::string &field_name, DATA_TYPE field_type)
+                                     {
+                                         auto field_param_tac = tac_gen.declare_para(field_name, field_type);
+                                         param_code = tac_gen.join_tac(param_code, field_param_tac);
+                                     });
             }
             else
             {
@@ -154,8 +157,8 @@ namespace twlm::ccpl::modules
         current_function = nullptr;
     }
 
-    void ASTToTACGenerator::expand_struct_fields(const std::string& struct_name, const std::string& base_name,
-                                                 std::function<void(const std::string&, DATA_TYPE)> handler)
+    void ASTToTACGenerator::expand_struct_fields(const std::string &struct_name, const std::string &base_name,
+                                                 std::function<void(const std::string &, DATA_TYPE)> handler)
     {
         auto struct_type = tac_gen.get_struct_type(struct_name);
         if (!struct_type || !struct_type->struct_metadata)
@@ -168,7 +171,7 @@ namespace twlm::ccpl::modules
         for (const auto &field_meta : struct_type->struct_metadata->fields)
         {
             std::string field_name = base_name + "." + field_meta.name;
-            
+
             // Handle different field types
             if (field_meta.type)
             {
@@ -176,7 +179,7 @@ namespace twlm::ccpl::modules
                 {
                     // Record array metadata for this field
                     record_array_metadata(field_name, field_meta.type);
-                    
+
                     // Recursively expand array elements
                     expand_array_elements(field_meta.type, field_name, handler);
                 }
@@ -272,7 +275,7 @@ namespace twlm::ccpl::modules
 
         // Create struct metadata with complete type information (no expansion)
         auto metadata = std::make_shared<StructTypeMetadata>(decl->name);
-        
+
         for (const auto &field : decl->fields)
         {
             // Store complete type information including arrays, nested structs, etc.
@@ -605,9 +608,9 @@ namespace twlm::ccpl::modules
     {
         if (!expr)
             return nullptr;
-        
-        auto value_exp= generate_expression(expr->value);
-        if(!value_exp)
+
+        auto value_exp = generate_expression(expr->value);
+        if (!value_exp)
             return nullptr;
 
         // For simple identifier assignment
@@ -686,7 +689,7 @@ namespace twlm::ccpl::modules
         if (expr->target->kind == ASTNodeKind::ARRAY_ACCESS)
         {
             auto array_access_expr = std::dynamic_pointer_cast<ArrayAccessExpr>(expr->target);
-            
+
             // Generate the address of the array element (without dereferencing)
             auto addr_exp = generate_array_address(array_access_expr);
             if (!addr_exp || !addr_exp->place)
@@ -742,7 +745,7 @@ namespace twlm::ccpl::modules
         {
             auto id = std::dynamic_pointer_cast<IdentifierExpr>(expr->array);
             auto var_sym = tac_gen.get_var(id->name);
-            
+
             // If it's a pointer variable, handle it differently
             if (var_sym && var_sym->is_pointer)
             {
@@ -753,7 +756,7 @@ namespace twlm::ccpl::modules
                     std::cerr << "Error: Failed to generate pointer expression" << std::endl;
                     return nullptr;
                 }
-                
+
                 // Generate index expression: i
                 auto index_exp = generate_expression(expr->index);
                 if (!index_exp || !index_exp->place)
@@ -761,20 +764,20 @@ namespace twlm::ccpl::modules
                     std::cerr << "Error: Failed to generate index expression" << std::endl;
                     return nullptr;
                 }
-                
+
                 // Calculate address: p + i
                 auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, ptr_exp, index_exp);
-                
+
                 // Dereference to get the value: *(p + i)
                 auto result_exp = tac_gen.do_dereference(addr_exp);
-                
+
                 // Set the correct data type (assuming pointer points to the base type)
                 if (result_exp && result_exp->place && var_sym->data_type != DATA_TYPE::UNDEF)
                 {
                     result_exp->data_type = var_sym->data_type;
                     result_exp->place->data_type = var_sym->data_type;
                 }
-                
+
                 return result_exp;
             }
         }
@@ -798,23 +801,23 @@ namespace twlm::ccpl::modules
         }
 
         // Dynamic offset calculation for multi-dimensional arrays
-        
+
         // First, collect all array access expressions from inner to outer
         // For a1.a[i][j], we get: [ArrayAccess<j, ArrayAccess<i, MemberAccess>>]
         std::vector<std::shared_ptr<ArrayAccessExpr>> access_chain;
         std::shared_ptr<Expression> current = expr;
-        
+
         while (current && current->kind == ASTNodeKind::ARRAY_ACCESS)
         {
             auto arr_access = std::dynamic_pointer_cast<ArrayAccessExpr>(current);
             access_chain.push_back(arr_access);
             current = arr_access->array;
         }
-        
+
         // Now current is the base (e.g., Identifier<a1> or MemberAccess<a, Identifier<a1>>)
         // Reverse to get outer-to-inner order
         std::reverse(access_chain.begin(), access_chain.end());
-        
+
         // Determine the base array name
         std::string base_array_name;
         if (current->kind == ASTNodeKind::IDENTIFIER)
@@ -832,7 +835,7 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: Unsupported array base type" << std::endl;
             return nullptr;
         }
-        
+
         // Get array metadata
         auto metadata = get_array_metadata(base_array_name);
         if (!metadata)
@@ -845,24 +848,24 @@ namespace twlm::ccpl::modules
                 std::cerr << "Error: Failed to generate base array expression" << std::endl;
                 return nullptr;
             }
-            
+
             auto index_exp = generate_expression(expr->index);
             if (!index_exp || !index_exp->place)
             {
                 std::cerr << "Error: Failed to generate index expression" << std::endl;
                 return nullptr;
             }
-            
+
             auto addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_exp, index_exp);
             auto result_exp = tac_gen.do_dereference(addr_exp);
             return result_exp;
         }
-        
+
         // Calculate total offset: offset = i0*stride0 + i1*stride1 + i2*stride2 + ...
         // For a[5][10], accessing a[i][j]: offset = i*10 + j
-        
+
         std::shared_ptr<EXP> total_offset = nullptr;
-        
+
         for (size_t dim = 0; dim < access_chain.size(); ++dim)
         {
             // Generate index expression for this dimension
@@ -872,10 +875,10 @@ namespace twlm::ccpl::modules
                 std::cerr << "Error: Failed to generate index for dimension " << dim << std::endl;
                 return nullptr;
             }
-            
+
             // Get stride for this dimension
             int stride = metadata->get_stride(dim);
-            
+
             // Calculate: index * stride
             std::shared_ptr<EXP> scaled_index;
             if (stride == 1)
@@ -889,11 +892,11 @@ namespace twlm::ccpl::modules
                 auto stride_sym = tac_gen.mk_const(stride);
                 auto stride_exp = tac_gen.mk_exp(stride_sym, nullptr);
                 stride_exp->data_type = DATA_TYPE::INT;
-                
+
                 // Multiply: index * stride
                 scaled_index = tac_gen.do_bin(TAC_OP::MUL, index_exp, stride_exp);
             }
-            
+
             // Add to total offset
             if (!total_offset)
             {
@@ -904,7 +907,7 @@ namespace twlm::ccpl::modules
                 total_offset = tac_gen.do_bin(TAC_OP::ADD, total_offset, scaled_index);
             }
         }
-        
+
         // Get the base address (address of first element)
         auto first_elem = find_array_first_element(base_array_name);
         if (!first_elem)
@@ -912,24 +915,24 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: Cannot find first element of array: " << base_array_name << std::endl;
             return nullptr;
         }
-        
+
         // Get address of first element
         auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
         auto base_addr_exp = tac_gen.do_address_of(first_elem_exp);
-        
+
         // Calculate final address: base_addr + total_offset
         auto final_addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_addr_exp, total_offset);
-        
+
         // Dereference to get the value
         auto result_exp = tac_gen.do_dereference(final_addr_exp);
-        
+
         // Set the correct data type from array metadata
         if (result_exp && result_exp->place)
         {
             result_exp->place->data_type = metadata->base_type;
             result_exp->data_type = metadata->base_type;
         }
-        
+
         return result_exp;
     }
 
@@ -970,15 +973,12 @@ namespace twlm::ccpl::modules
         if (!expr)
             return nullptr;
 
-        // Generate the operand expression
         auto operand_exp = generate_expression(expr->operand);
         if (!operand_exp || !operand_exp->place)
         {
             std::cerr << "Error: Invalid operand for address-of operation" << std::endl;
             return nullptr;
         }
-
-        // Use TAC generator to create address-of operation
         return tac_gen.do_address_of(operand_exp);
     }
 
@@ -995,7 +995,6 @@ namespace twlm::ccpl::modules
             return nullptr;
         }
 
-        // Use TAC generator to create dereference operation
         return tac_gen.do_dereference(operand_exp);
     }
 
@@ -1048,49 +1047,50 @@ namespace twlm::ccpl::modules
         return result;
     }
 
-    void ASTToTACGenerator::record_array_metadata(const std::string& name, std::shared_ptr<Type> array_type)
+    void ASTToTACGenerator::record_array_metadata(const std::string &name, std::shared_ptr<Type> array_type)
     {
         if (!array_type || array_type->kind != TypeKind::ARRAY)
             return;
-        
+
         // Extract all dimensions from nested array types
         std::vector<int> dimensions;
         std::shared_ptr<Type> current_type = array_type;
-        
+
         while (current_type && current_type->kind == TypeKind::ARRAY)
         {
             dimensions.push_back(current_type->array_size);
             current_type = current_type->base_type;
         }
-        
+
         // Reverse to get correct order (outer to inner)
         // For char a[5][10], Type structure is: Array<10, Array<5, char>>
         // After collection we have [10, 5], need to reverse to [5, 10]
         std::reverse(dimensions.begin(), dimensions.end());
-        
+
         // Get the base type (current_type is now the element type)
         DATA_TYPE base_data_type = convert_type_to_data_type(current_type);
-        
+
         // Determine element size (for now, everything is 4 bytes/words in TAC)
         int element_size = 4;
-        if(base_data_type==DATA_TYPE::STRUCT){
+        if (base_data_type == DATA_TYPE::STRUCT)
+        {
             auto struct_meta = tac_gen.get_struct_type(current_type->struct_name)->struct_metadata;
             element_size = struct_meta->total_size;
         }
-        
+
         // Create and store metadata with base type
         auto metadata = std::make_shared<ArrayMetadata>(name, dimensions, base_data_type, element_size);
         array_metadata_map[name] = metadata;
-        
+
         // Debug output
-        std::cout << "Recorded array metadata: " << metadata->to_string() 
-                  << " (stride[0]=" << metadata->get_stride(0) 
+        std::cout << "Recorded array metadata: " << metadata->to_string()
+                  << " (stride[0]=" << metadata->get_stride(0)
                   << ", base_type=" << static_cast<int>(base_data_type)
                   << ", unit size=" << metadata->element_size
                   << ")" << std::endl;
     }
 
-    std::shared_ptr<ArrayMetadata> ASTToTACGenerator::get_array_metadata(const std::string& name) const
+    std::shared_ptr<ArrayMetadata> ASTToTACGenerator::get_array_metadata(const std::string &name) const
     {
         auto it = array_metadata_map.find(name);
         if (it != array_metadata_map.end())
@@ -1111,7 +1111,7 @@ namespace twlm::ccpl::modules
         {
             auto id = std::dynamic_pointer_cast<IdentifierExpr>(expr->array);
             auto var_sym = tac_gen.get_var(id->name);
-            
+
             // If it's a pointer variable, calculate address directly
             if (var_sym && var_sym->is_pointer)
             {
@@ -1122,7 +1122,7 @@ namespace twlm::ccpl::modules
                     std::cerr << "Error: Failed to generate pointer expression for address" << std::endl;
                     return nullptr;
                 }
-                
+
                 // Generate index expression: i
                 auto index_exp = generate_expression(expr->index);
                 if (!index_exp || !index_exp->place)
@@ -1130,7 +1130,7 @@ namespace twlm::ccpl::modules
                     std::cerr << "Error: Failed to generate index expression for address" << std::endl;
                     return nullptr;
                 }
-                
+
                 // Calculate and return address: p + i
                 return tac_gen.do_bin(TAC_OP::ADD, ptr_exp, index_exp);
             }
@@ -1155,21 +1155,21 @@ namespace twlm::ccpl::modules
         }
 
         // Dynamic address calculation for multi-dimensional arrays
-        
+
         // Collect all array access expressions from inner to outer
         std::vector<std::shared_ptr<ArrayAccessExpr>> access_chain;
         std::shared_ptr<Expression> current = expr;
-        
+
         while (current && current->kind == ASTNodeKind::ARRAY_ACCESS)
         {
             auto arr_access = std::dynamic_pointer_cast<ArrayAccessExpr>(current);
             access_chain.push_back(arr_access);
             current = arr_access->array;
         }
-        
+
         // Reverse to get outer-to-inner order
         std::reverse(access_chain.begin(), access_chain.end());
-        
+
         // Determine the base array name
         std::string base_array_name;
         if (current->kind == ASTNodeKind::IDENTIFIER)
@@ -1187,7 +1187,7 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: Unsupported array base type in address calculation" << std::endl;
             return nullptr;
         }
-        
+
         // Get array metadata
         auto metadata = get_array_metadata(base_array_name);
         if (!metadata)
@@ -1195,10 +1195,10 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: No metadata found for array: " << base_array_name << std::endl;
             return nullptr;
         }
-        
+
         // Calculate total offset: offset = i0*stride0 + i1*stride1 + i2*stride2 + ...
         std::shared_ptr<EXP> total_offset = nullptr;
-        
+
         for (size_t dim = 0; dim < access_chain.size(); ++dim)
         {
             // Generate index expression for this dimension
@@ -1208,10 +1208,10 @@ namespace twlm::ccpl::modules
                 std::cerr << "Error: Failed to generate index for dimension " << dim << std::endl;
                 return nullptr;
             }
-            
+
             // Get stride for this dimension
             int stride = metadata->get_stride(dim);
-            
+
             // Calculate: index * stride
             std::shared_ptr<EXP> scaled_index;
             if (stride == 1)
@@ -1225,7 +1225,7 @@ namespace twlm::ccpl::modules
                 stride_exp->data_type = DATA_TYPE::INT;
                 scaled_index = tac_gen.do_bin(TAC_OP::MUL, index_exp, stride_exp);
             }
-            
+
             // Add to total offset
             if (!total_offset)
             {
@@ -1236,7 +1236,7 @@ namespace twlm::ccpl::modules
                 total_offset = tac_gen.do_bin(TAC_OP::ADD, total_offset, scaled_index);
             }
         }
-        
+
         // Get the base address (address of first element)
         auto first_elem = find_array_first_element(base_array_name);
         if (!first_elem)
@@ -1244,14 +1244,14 @@ namespace twlm::ccpl::modules
             std::cerr << "Error: Cannot find first element of array: " << base_array_name << std::endl;
             return nullptr;
         }
-        
+
         // Get address of first element
         auto first_elem_exp = tac_gen.mk_exp(first_elem, nullptr);
         auto base_addr_exp = tac_gen.do_address_of(first_elem_exp);
-        
+
         // Calculate final address: base_addr + total_offset
         auto final_addr_exp = tac_gen.do_bin(TAC_OP::ADD, base_addr_exp, total_offset);
-        
+
         return final_addr_exp;
     }
 

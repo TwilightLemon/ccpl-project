@@ -6,10 +6,6 @@
 
 namespace twlm::ccpl::abstraction
 {
-    /**
-     * Array metadata for tracking array dimensions and sizes
-     * This is used for dynamic offset calculation in array access
-     */
     struct ArrayMetadata
     {
         std::string name;                    // Full variable name (e.g., "a1.a" or "arr")

@@ -112,6 +112,15 @@ func_decl: type_spec func_name '(' param_list ')' block
     }
     $$ = ast_builder.make_func_decl($1, $2, $4, body);
 }
+|func_name '(' param_list ')' block
+{
+    auto body = std::dynamic_pointer_cast<BlockStmt>($5);
+    if (!body) {
+        body = std::make_shared<BlockStmt>();
+        if ($5) body->statements.push_back($5);
+    }
+    $$ = ast_builder.make_func_decl(ast_builder.make_basic_type(DATA_TYPE::INT), $1, $3, body);
+}
 ;
 
 struct_decl: STRUCT IDENTIFIER '{' struct_field_list '}' EOL

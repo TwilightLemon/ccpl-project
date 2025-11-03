@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <ctime>
 #include <cstdlib>
+#include <stdexcept>
 
 using namespace twlm::ccpl::modules;
 using namespace twlm::ccpl::abstraction;
@@ -532,28 +533,29 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
 
     case TAC_OP::INPUT:
         r = reg_alloc(tac->a);
-        output << "\tITI\n";
+        if(tac->a->data_type==DATA_TYPE::CHAR)
+            output << "\tITC\n";
+        else if(tac->a->data_type==DATA_TYPE::INT)
+            output << "\tITI\n";
+        else throw std::runtime_error("Unsupported data type for INPUT");
         output << "\tLOD R" << r << ",R" << R_IO << "\n";
         reg_desc[r].state = RegState::MODIFIED;
         return;
 
     case TAC_OP::OUTPUT:
+        r = reg_alloc(tac->a);
+        output << "\tLOD R" << R_IO << ",R" << r << "\n";
+        
         if (tac->a->type == SYM_TYPE::CONST_INT||
             (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::INT))
         {
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTI\n";
         }else  if (tac->a->type == SYM_TYPE::CONST_CHAR ||
             (tac->a->type == SYM_TYPE::VAR && tac->a->data_type == DATA_TYPE::CHAR )){
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTC\n";
         }
         else if (tac->a->type == SYM_TYPE::TEXT)
         {
-            r = reg_alloc(tac->a);
-            output << "\tLOD R" << R_IO << ",R" << r << "\n";
             output << "\tOTS\n";
         }
         return;
@@ -767,7 +769,7 @@ void ObjGenerator::generate()
     auto cur = tac_gen.get_tac_first();
     while (cur != nullptr)
     {
-        output << "\n\t# " << cur->to_string() << "\n";
+        //output << "\n\t# " << cur->to_string() << "\n";
         asm_code(cur);
         cur = cur->next;
     }

@@ -26,11 +26,12 @@ namespace twlm::ccpl::abstraction
         DATA_TYPE return_type;
 
         // For struct types
-        std::string struct_type_name; //refer to the struct type name of a variable
+        std::string struct_type_name;
         std::shared_ptr<StructTypeMetadata> struct_metadata; // Complete struct type metadata (not expanded)
 
         // For pointers
         bool is_pointer;
+        DATA_TYPE base_type;
 
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),

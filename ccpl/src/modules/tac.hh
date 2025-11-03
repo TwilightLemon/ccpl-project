@@ -10,7 +10,7 @@
 namespace twlm::ccpl::modules
 {
     using namespace twlm::ccpl::abstraction;
-    
+
     class TACGenerator
     {
     private:
@@ -27,7 +27,7 @@ namespace twlm::ccpl::modules
 
         std::shared_ptr<TAC> tac_first;
         std::shared_ptr<TAC> tac_last;
-        
+
         // Loop context stack for break/continue
         std::vector<LoopContext> loop_stack;
         std::vector<SwitchContext> switch_stack;
@@ -53,12 +53,12 @@ namespace twlm::ccpl::modules
         std::shared_ptr<SYM> mk_label(const std::string &name);
         std::shared_ptr<SYM> get_var(const std::string &name);
         std::shared_ptr<SYM> declare_func(const std::string &name, DATA_TYPE return_type);
-        
+
         // Struct operations
         std::shared_ptr<SYM> declare_struct_type(const std::string &name,
                                                  std::shared_ptr<StructTypeMetadata> metadata);
         std::shared_ptr<SYM> get_struct_type(const std::string &name);
-        std::shared_ptr<TAC> do_member_access(std::shared_ptr<SYM> struct_var, const std::string& field_name);
+        std::shared_ptr<TAC> do_member_access(std::shared_ptr<SYM> struct_var, const std::string &field_name);
 
         // TAC operations
         std::shared_ptr<TAC> mk_tac(TAC_OP op,
@@ -68,7 +68,7 @@ namespace twlm::ccpl::modules
         std::shared_ptr<TAC> join_tac(std::shared_ptr<TAC> c1, std::shared_ptr<TAC> c2);
 
         // Declaration operations
-        std::shared_ptr<TAC> declare_var(const std::string &name, DATA_TYPE dtype, bool is_pointer = false);
+        std::shared_ptr<TAC> declare_var(const std::string &name, DATA_TYPE dtype, bool is_pointer = false, DATA_TYPE base_type = DATA_TYPE::UNDEF);
         std::shared_ptr<TAC> declare_para(const std::string &name, DATA_TYPE dtype, bool is_pointer = false);
 
         // Statement operations
@@ -88,7 +88,7 @@ namespace twlm::ccpl::modules
                                     std::shared_ptr<EXP> cond,
                                     std::shared_ptr<TAC> update,
                                     std::shared_ptr<TAC> body);
-        
+
         // Prepare loop context before parsing loop body
         void begin_while_loop();
         void begin_for_loop();
@@ -97,7 +97,7 @@ namespace twlm::ccpl::modules
                                           std::shared_ptr<EXP> cond,
                                           std::shared_ptr<TAC> update,
                                           std::shared_ptr<TAC> body);
-        
+
         std::shared_ptr<TAC> do_call(const std::string &name, std::shared_ptr<EXP> arglist);
         std::shared_ptr<TAC> do_break();
         std::shared_ptr<TAC> do_continue();
@@ -114,7 +114,7 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> do_bin(TAC_OP op, std::shared_ptr<EXP> exp1, std::shared_ptr<EXP> exp2);
         std::shared_ptr<EXP> do_un(TAC_OP op, std::shared_ptr<EXP> exp);
         std::shared_ptr<EXP> do_call_ret(const std::string &name, std::shared_ptr<EXP> arglist);
-        
+
         // Pointer operations
         std::shared_ptr<EXP> do_address_of(std::shared_ptr<EXP> exp);
         std::shared_ptr<EXP> do_dereference(std::shared_ptr<EXP> exp);
@@ -123,9 +123,9 @@ namespace twlm::ccpl::modules
         // Scope management
         void enter_scope();
         void leave_scope();
-        
+
         // Loop management for break/continue
-        void enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> continue_label, std::shared_ptr<SYM> loop_start_label=nullptr);
+        void enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> continue_label, std::shared_ptr<SYM> loop_start_label = nullptr);
         void leave_loop();
         bool in_loop() const;
 
@@ -151,8 +151,8 @@ namespace twlm::ccpl::modules
         // Getters
         std::shared_ptr<TAC> get_tac_first() const { return tac_first; }
         std::shared_ptr<TAC> get_tac_last() const { return tac_last; }
-        const std::unordered_map<std::string, std::shared_ptr<SYM>>& get_global_symbols() const { return sym_tab_global; }
-        
+        const std::unordered_map<std::string, std::shared_ptr<SYM>> &get_global_symbols() const { return sym_tab_global; }
+
         // Link a TAC node to the global TAC chain
         void link_tac(std::shared_ptr<TAC> tac);
     };
