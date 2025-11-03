@@ -196,13 +196,15 @@ int ObjGenerator::reg_alloc(std::shared_ptr<SYM> s)
 void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
-    int reg_b = -1, reg_c = -1;
+    int reg_b = reg_alloc(b);
+    int reg_c = reg_alloc(c);
 
-    // Ensure different registers
-    while (reg_b == reg_c)
+    // If they're the same register (same variable), we need to use a temporary
+    if (reg_b == reg_c)
     {
-        reg_b = reg_alloc(b);
-        reg_c = reg_alloc(c);
+        // Load c into a temporary register
+        output << "\tLOD R" << R_TP << ",R" << reg_c << "\n";
+        reg_c = R_TP;
     }
 
     output << "\t" << op << " R" << reg_b << ",R" << reg_c << "\n";
@@ -212,13 +214,15 @@ void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
 void ObjGenerator::asm_cmp(TAC_OP op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
-    int reg_b = -1, reg_c = -1;
+    int reg_b = reg_alloc(b);
+    int reg_c = reg_alloc(c);
 
-    // Ensure different registers
-    while (reg_b == reg_c)
+    // If they're the same register (same variable), we need to use a temporary
+    if (reg_b == reg_c)
     {
-        reg_b = reg_alloc(b);
-        reg_c = reg_alloc(c);
+        // Load c into a temporary register
+        output << "\tLOD R" << R_TP << ",R" << reg_c << "\n";
+        reg_c = R_TP;
     }
 
     // Subtract and test
@@ -606,14 +610,14 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
             // Array size = total elements * element_size
             var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
             std::clog << "Allocating array " << tac->a->name 
-                      << " with size " << var_size << " words" << std::endl;
+                      << " with size " << var_size << " bytes" << std::endl;
         }
         else if (tac->a->data_type == DATA_TYPE::STRUCT && tac->a->struct_metadata)
         {
             // Struct size from metadata
             var_size = tac->a->struct_metadata->total_size;
             std::clog << "Allocating struct " << tac->a->name 
-                      << " with size " << var_size << " words" << std::endl;
+                      << " with size " << var_size << " bytes" << std::endl;
         }
         
         // Allocate space
@@ -716,17 +720,45 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         // a = *b : Load value from address stored in b
         {
             int r_ptr = reg_alloc(tac->b);  // Load pointer value
-            int r_val = reg_alloc(tac->a);  // Result register
             
-            // Ensure they're different registers
-            if (r_ptr == r_val) {
-                // Allocate another register for result
-                rdesc_clear(r_val);
-                r_val = reg_alloc(tac->a);
+            // Find a free register for the result (don't load tac->a, it's the result!)
+            int r_val = -1;
+            for (int i = R_GEN; i < R_NUM; i++) {
+                if (reg_desc[i].var == nullptr) {
+                    r_val = i;
+                    break;
+                }
+            }
+            
+            if (r_val == -1) {
+                // No free register, find an unmodified one
+                for (int i = R_GEN; i < R_NUM; i++) {
+                    if (reg_desc[i].state == RegState::UNMODIFIED && i != r_ptr) {
+                        r_val = i;
+                        rdesc_clear(r_val);
+                        break;
+                    }
+                }
+            }
+            
+            if (r_val == -1) {
+                // All registers are modified, write back one that's not r_ptr
+                for (int i = R_GEN; i < R_NUM; i++) {
+                    if (i != r_ptr) {
+                        r_val = i;
+                        asm_write_back(r_val);
+                        rdesc_clear(r_val);
+                        break;
+                    }
+                }
             }
             
             // Load value from address in r_ptr
-            output << "\tLOD R" << r_val << ",(R" << r_ptr << ")\n";
+            if (tac->a->data_type == DATA_TYPE::CHAR) {
+                output << "\tLDC R" << r_val << ",(R" << r_ptr << ")\n";
+            } else {
+                output << "\tLOD R" << r_val << ",(R" << r_ptr << ")\n";
+            }
             rdesc_fill(r_val, tac->a, RegState::MODIFIED);
         }
         return;

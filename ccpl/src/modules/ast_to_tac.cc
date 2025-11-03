@@ -1280,10 +1280,14 @@ namespace twlm::ccpl::modules
             base_addr = tac_gen.do_address_of(base_exp);
         }
 
-        // OPTIMIZATION: If all indices are constants, calculate offset at compile time
-        if (expr->all_constant_access() && constant_indices.size() == access_chain.size())
+        // OPTIMIZATION: Constant folding for array indices
+        // Even if not all indices are constant, we can still fold the constant ones
+        bool has_constant_part = (constant_indices.size() == access_chain.size() && 
+                                  constant_indices.size() > 0);
+        
+        if (has_constant_part && expr->all_constant_access())
         {
-            // Calculate element offset (number of elements)
+            // All indices are constant - full compile-time calculation
             int element_offset = 0;
             for (size_t dim = 0; dim < constant_indices.size(); ++dim)
             {
@@ -1291,7 +1295,6 @@ namespace twlm::ccpl::modules
                 element_offset += constant_indices[dim] * stride;
             }
             
-            // Convert to byte/word offset by multiplying with element_size
             int compile_time_offset = element_offset * metadata->element_size;
             
             std::clog << "Compile-time constant array access: " << base_array_name 
@@ -1299,7 +1302,6 @@ namespace twlm::ccpl::modules
                       << " word_offset=" << compile_time_offset 
                       << " (element_size=" << metadata->element_size << ")" << std::endl;
             
-            // base_addr was already calculated above
             if (compile_time_offset == 0)
             {
                 return base_addr;
@@ -1307,9 +1309,6 @@ namespace twlm::ccpl::modules
             else
             {
                 auto offset_const = tac_gen.mk_const(compile_time_offset);
-                
-                // Generate direct ADD without pointer arithmetic scaling
-                // (offsets are already in words, not indices)
                 auto result_temp = tac_gen.mk_tmp(DATA_TYPE::INT);
                 result_temp->is_pointer = true;
                 auto result_decl = tac_gen.mk_tac(TAC_OP::VAR, result_temp);
@@ -1324,13 +1323,24 @@ namespace twlm::ccpl::modules
             }
         }
 
-        // DYNAMIC ADDRESS CALCULATION
+        // DYNAMIC ADDRESS CALCULATION with partial constant folding
         // Calculate total offset in elements: offset = i0*stride0 + i1*stride1 + i2*stride2 + ...
         std::shared_ptr<EXP> element_offset = nullptr;
+        int constant_element_offset = 0;  // Accumulate compile-time constant parts
 
         for (size_t dim = 0; dim < access_chain.size(); ++dim)
         {
-            // Generate index expression for this dimension
+            // Check if this index is a constant
+            if (dim < constant_indices.size() && 
+                access_chain[dim]->index->kind == ASTNodeKind::CONST_INT)
+            {
+                // Constant index - accumulate at compile time
+                int stride = metadata->get_stride(dim);
+                constant_element_offset += constant_indices[dim] * stride;
+                continue;  // Skip TAC generation for this dimension
+            }
+
+            // Dynamic index - generate TAC
             auto index_exp = generate_expression(access_chain[dim]->index);
             if (!index_exp || !index_exp->place)
             {
@@ -1367,33 +1377,82 @@ namespace twlm::ccpl::modules
         }
 
         // Convert element offset to word offset by multiplying with element_size
-        std::shared_ptr<EXP> word_offset;
-        if (metadata->element_size == 1)
+        // Handle both dynamic and constant parts
+        std::shared_ptr<EXP> dynamic_word_offset = nullptr;
+        int constant_word_offset = constant_element_offset * metadata->element_size;
+        
+        if (element_offset)
         {
-            word_offset = element_offset;
-        }
-        else
-        {
-            auto size_const = tac_gen.mk_const(metadata->element_size);
-            auto size_exp = tac_gen.mk_exp(size_const, nullptr);
-            size_exp->data_type = DATA_TYPE::INT;
-            word_offset = tac_gen.do_bin(TAC_OP::MUL, element_offset, size_exp);
+            // We have dynamic part
+            if (metadata->element_size == 1)
+            {
+                dynamic_word_offset = element_offset;
+            }
+            else
+            {
+                auto size_const = tac_gen.mk_const(metadata->element_size);
+                auto size_exp = tac_gen.mk_exp(size_const, nullptr);
+                size_exp->data_type = DATA_TYPE::INT;
+                dynamic_word_offset = tac_gen.do_bin(TAC_OP::MUL, element_offset, size_exp);
+            }
         }
 
-        // Calculate final address: base_addr + word_offset
-        // Use direct ADD to avoid pointer arithmetic scaling
+        // Calculate final address: base_addr + dynamic_offset + constant_offset
         auto result_temp = tac_gen.mk_tmp(DATA_TYPE::INT);
         result_temp->is_pointer = true;
         auto result_decl = tac_gen.mk_tac(TAC_OP::VAR, result_temp);
-        result_decl->prev = tac_gen.join_tac(base_addr->code, word_offset->code);
         
-        auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, word_offset->place);
-        add_tac->prev = result_decl;
-        
-        auto final_result = tac_gen.mk_exp(result_temp, add_tac);
-        final_result->data_type = DATA_TYPE::INT;
-        
-        return final_result;
+        if (dynamic_word_offset && constant_word_offset != 0)
+        {
+            // Both dynamic and constant parts
+            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_word_offset->code);
+            
+            // temp1 = base_addr + dynamic_offset
+            auto temp1 = tac_gen.mk_tmp(DATA_TYPE::INT);
+            temp1->is_pointer = true;
+            auto temp1_decl = tac_gen.mk_tac(TAC_OP::VAR, temp1);
+            temp1_decl->prev = result_decl;
+            
+            auto add1_tac = tac_gen.mk_tac(TAC_OP::ADD, temp1, base_addr->place, dynamic_word_offset->place);
+            add1_tac->prev = temp1_decl;
+            
+            // result = temp1 + constant_offset
+            auto const_offset = tac_gen.mk_const(constant_word_offset);
+            auto add2_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, temp1, const_offset);
+            add2_tac->prev = add1_tac;
+            
+            auto final_result = tac_gen.mk_exp(result_temp, add2_tac);
+            final_result->data_type = DATA_TYPE::INT;
+            return final_result;
+        }
+        else if (dynamic_word_offset)
+        {
+            // Only dynamic part
+            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_word_offset->code);
+            auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, dynamic_word_offset->place);
+            add_tac->prev = result_decl;
+            
+            auto final_result = tac_gen.mk_exp(result_temp, add_tac);
+            final_result->data_type = DATA_TYPE::INT;
+            return final_result;
+        }
+        else if (constant_word_offset != 0)
+        {
+            // Only constant part
+            result_decl->prev = base_addr->code;
+            auto const_offset = tac_gen.mk_const(constant_word_offset);
+            auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, const_offset);
+            add_tac->prev = result_decl;
+            
+            auto final_result = tac_gen.mk_exp(result_temp, add_tac);
+            final_result->data_type = DATA_TYPE::INT;
+            return final_result;
+        }
+        else
+        {
+            // No offset at all
+            return base_addr;
+        }
     }
 
 } // namespace twlm::ccpl::modules
