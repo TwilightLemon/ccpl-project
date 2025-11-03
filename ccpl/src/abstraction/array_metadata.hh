@@ -10,7 +10,7 @@ namespace twlm::ccpl::abstraction
     {
         std::string name;                    // Full variable name (e.g., "a1.a" or "arr")
         std::vector<int> dimensions;         // Dimension sizes from outer to inner (e.g., [5, 10] for char[5][10])
-        int element_size;                    // Size of each element in bytes/words (usually 4 for int/char in this TAC)
+        int element_size;                    // Size of each element in bytes (usually 4 for int/char in this TAC)
         DATA_TYPE base_type;                 // Base element type (e.g., CHAR for char[5][10])
         std::string struct_type_name;        // If base_type is STRUCT, this is the struct type name
         

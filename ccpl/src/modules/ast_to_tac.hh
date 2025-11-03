@@ -69,29 +69,18 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> generate_address_of(std::shared_ptr<AddressOfExpr> expr);
         std::shared_ptr<EXP> generate_dereference(std::shared_ptr<DereferenceExpr> expr);
         
-        // for struct / array expansion
         DATA_TYPE convert_type_to_data_type(std::shared_ptr<Type> type);
-
-        // convert expression vector to linked list for function calls
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
         
-        void expand_array_elements(std::shared_ptr<Type> array_type, const std::string& base_name,
-                                  std::function<void(const std::string&, DATA_TYPE)> handler);
-
-        //expand declared struct fields
         void expand_struct_fields(const std::string& struct_name, const std::string& base_name,
                                  std::function<void(const std::string&, DATA_TYPE)> handler);
         
-        // find the first SYM of a expanded array..
-        std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
+        std::string infer_struct_type_from_expr(std::shared_ptr<Expression> expr);
         
-        // Array metadata management
         std::shared_ptr<ArrayMetadata> create_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
-        void record_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
         std::shared_ptr<ArrayMetadata> get_array_metadata(const std::string& name) const;
         std::shared_ptr<ArrayMetadata> infer_array_metadata_from_access(std::shared_ptr<Expression> array_expr, const std::string& fallback_name);
         
-        // Generate array address without dereferencing (for assignment targets)
         std::shared_ptr<EXP> generate_array_address(std::shared_ptr<ArrayAccessExpr> expr);
 
     };

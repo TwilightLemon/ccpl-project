@@ -602,25 +602,17 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
 
     case TAC_OP::VAR:
     {
-        int var_size = 4; // Default size for basic types
+        int var_size = 4;
         
-        // Calculate size based on variable type
         if (tac->a->is_array && tac->a->array_metadata)
         {
-            // Array size = total elements * element_size
             var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
-            std::clog << "Allocating array " << tac->a->name 
-                      << " with size " << var_size << " bytes" << std::endl;
         }
         else if (tac->a->data_type == DATA_TYPE::STRUCT && tac->a->struct_metadata)
         {
-            // Struct size from metadata
             var_size = tac->a->struct_metadata->total_size;
-            std::clog << "Allocating struct " << tac->a->name 
-                      << " with size " << var_size << " bytes" << std::endl;
         }
         
-        // Allocate space
         if (tac->a->scope == SYM_SCOPE::LOCAL)
         {
             tac->a->offset = tof;
@@ -643,77 +635,59 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::ADDR:
-        // a = &b : Get address of variable b and store in a
-        // IMPORTANT: Before taking the address, we must ensure the variable is in memory
-        // If it's in a register with modified state, write it back first
-        // Also write back all array elements if this is an array element (arr[0], arr[1], etc.)
         {
-            std::string var_name = tac->b->name;
-            size_t bracket_pos = var_name.find('[');
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var == tac->b && reg_desc[i].state == RegState::MODIFIED)
+                {
+                    asm_write_back(i);
+                    break;
+                }
+            }
             
-            if (bracket_pos != std::string::npos) {
-                // This is an array element, write back all elements of this array
-                std::string array_prefix = var_name.substr(0, bracket_pos + 1); // e.g., "arr["
-                
-                for (int i = R_GEN; i < R_NUM; i++) {
-                    if (reg_desc[i].var != nullptr && 
-                        reg_desc[i].var->name.find(array_prefix) == 0 &&
-                        reg_desc[i].state == RegState::MODIFIED) {
-                        asm_write_back(i);
-                        // Don't break - continue to write back all array elements
-                    }
-                }
-            } else {
-                // Single variable, just write it back if modified
-                for (int i = R_GEN; i < R_NUM; i++) {
-                    if (reg_desc[i].var == tac->b && reg_desc[i].state == RegState::MODIFIED) {
-                        asm_write_back(i);
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // For local variables: address = BP + offset
-        // For global variables: address = STATIC + offset
-        
-        // Find an empty register (don't use reg_alloc as it will try to load the value)
-        r = -1;
-        for (int i = R_GEN; i < R_NUM; i++) {
-            if (reg_desc[i].var == nullptr) {
-                r = i;
-                break;
-            }
-        }
-        if (r == -1) {
-            // All registers occupied, write back one and use it
-            for (int i = R_GEN; i < R_NUM; i++) {
-                if (reg_desc[i].state == RegState::UNMODIFIED) {
+            r = -1;
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var == nullptr)
+                {
                     r = i;
                     break;
                 }
             }
-            if (r == -1) {
-                // Pick the first general register
-                r = R_GEN;
-                asm_write_back(r);
+            
+            if (r == -1)
+            {
+                for (int i = R_GEN; i < R_NUM; i++)
+                {
+                    if (reg_desc[i].state == RegState::UNMODIFIED)
+                    {
+                        r = i;
+                        break;
+                    }
+                }
+                if (r == -1)
+                {
+                    r = R_GEN;
+                    asm_write_back(r);
+                }
             }
-        }
-        
-        if (tac->b->scope == SYM_SCOPE::LOCAL) {
-            output << "\tLOD R" << r << ",R" << R_BP << "\n";
-            if (tac->b->offset >= 0) {
+            
+            if (tac->b->scope == SYM_SCOPE::LOCAL)
+            {
+                output << "\tLOD R" << r << ",R" << R_BP << "\n";
+                if (tac->b->offset >= 0)
+                    output << "\tADD R" << r << "," << tac->b->offset << "\n";
+                else
+                    output << "\tSUB R" << r << "," << (-tac->b->offset) << "\n";
+            }
+            else
+            {
+                output << "\tLOD R" << r << ",STATIC\n";
                 output << "\tADD R" << r << "," << tac->b->offset << "\n";
-            } else {
-                output << "\tSUB R" << r << "," << (-tac->b->offset) << "\n";
             }
-        } else {
-            // Global variable
-            output << "\tLOD R" << r << ",STATIC\n";
-            output << "\tADD R" << r << "," << tac->b->offset << "\n";
+            
+            rdesc_fill(r, tac->a, RegState::MODIFIED);
         }
-        
-        rdesc_fill(r, tac->a, RegState::MODIFIED);
         return;
 
     case TAC_OP::LOAD_PTR:
@@ -764,32 +738,27 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::STORE_PTR:
-        // *a = b : Store value b to address stored in a
         {
-            int r_ptr = reg_alloc(tac->a);  // Load pointer value
-            int r_val = reg_alloc(tac->b);  // Load value to store
+            int r_ptr = reg_alloc(tac->a);
+            int r_val = reg_alloc(tac->b);
             
-            // Ensure they're different registers
-            if (r_ptr == r_val) {
-                // Need to handle this case
-                // Store value in a temporary location first
+            if (r_ptr == r_val)
+            {
                 output << "\tLOD R" << R_TP << ",R" << r_val << "\n";
                 r_val = R_TP;
             }
             
-            // Store value to address in r_ptr
-            output << "\tSTO (R" << r_ptr << "),R" << r_val << "\n";
+            if (tac->b->data_type == DATA_TYPE::CHAR)
+                output << "\tSTC (R" << r_ptr << "),R" << r_val << "\n";
+            else
+                output << "\tSTO (R" << r_ptr << "),R" << r_val << "\n";
             
-            // IMPORTANT: After storing through a pointer, we don't know which variable
-            // was modified, so we must invalidate all register descriptors except
-            // constants, because any variable in memory might have been changed
-            for (int i = R_GEN; i < R_NUM; i++) {
-                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR) {
-                    // Write back if modified
-                    if (reg_desc[i].state == RegState::MODIFIED && i != r_val) {
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR)
+                {
+                    if (reg_desc[i].state == RegState::MODIFIED && i != r_val)
                         asm_write_back(i);
-                    }
-                    // Clear the descriptor
                     rdesc_clear(i);
                 }
             }
