@@ -242,6 +242,36 @@ std::shared_ptr<TAC> TACGenerator::declare_var(const std::string& name, DATA_TYP
     return mk_tac(TAC_OP::VAR, var);
 }
 
+std::shared_ptr<TAC> TACGenerator::declare_array(const std::string& name, std::shared_ptr<ArrayMetadata> metadata) {
+    if (!metadata) {
+        error("Array metadata is required for array declaration");
+        return nullptr;
+    }
+    
+    // Create array variable with metadata
+    auto var = mk_var(name, DATA_TYPE::INT); // Arrays are represented by their base address (INT/pointer)
+    var->is_array = true;
+    var->array_metadata = metadata;
+    
+    return mk_tac(TAC_OP::VAR, var);
+}
+
+std::shared_ptr<TAC> TACGenerator::declare_struct_var(const std::string& name, const std::string& struct_type_name) {
+    // Look up struct type
+    auto struct_type = get_struct_type(struct_type_name);
+    if (!struct_type || !struct_type->struct_metadata) {
+        error("Unknown struct type: " + struct_type_name);
+        return nullptr;
+    }
+    
+    // Create struct variable with metadata
+    auto var = mk_var(name, DATA_TYPE::STRUCT);
+    var->struct_type_name = struct_type_name;
+    var->struct_metadata = struct_type->struct_metadata;
+    
+    return mk_tac(TAC_OP::VAR, var);
+}
+
 std::shared_ptr<TAC> TACGenerator::declare_para(const std::string& name, DATA_TYPE dtype, bool is_pointer) {
     auto sym = mk_var(name, dtype);
     sym->is_pointer = is_pointer;

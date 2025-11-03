@@ -68,6 +68,8 @@ namespace twlm::ccpl::modules
 
         // Declaration operations
         std::shared_ptr<TAC> declare_var(const std::string &name, DATA_TYPE dtype, bool is_pointer = false, DATA_TYPE base_type = DATA_TYPE::UNDEF);
+        std::shared_ptr<TAC> declare_array(const std::string &name, std::shared_ptr<ArrayMetadata> metadata);
+        std::shared_ptr<TAC> declare_struct_var(const std::string &name, const std::string &struct_type_name);
         std::shared_ptr<TAC> declare_para(const std::string &name, DATA_TYPE dtype, bool is_pointer = false);
 
         // Statement operations

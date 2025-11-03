@@ -65,6 +65,7 @@ namespace twlm::ccpl::modules
         std::shared_ptr<EXP> generate_func_call(std::shared_ptr<FuncCallExpr> expr);
         std::shared_ptr<EXP> generate_array_access(std::shared_ptr<ArrayAccessExpr> expr);
         std::shared_ptr<EXP> generate_member_access(std::shared_ptr<MemberAccessExpr> expr);
+        std::shared_ptr<EXP> generate_member_address(std::shared_ptr<MemberAccessExpr> expr);
         std::shared_ptr<EXP> generate_address_of(std::shared_ptr<AddressOfExpr> expr);
         std::shared_ptr<EXP> generate_dereference(std::shared_ptr<DereferenceExpr> expr);
         
@@ -85,8 +86,10 @@ namespace twlm::ccpl::modules
         std::shared_ptr<SYM> find_array_first_element(const std::string& base_name);
         
         // Array metadata management
+        std::shared_ptr<ArrayMetadata> create_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
         void record_array_metadata(const std::string& name, std::shared_ptr<Type> array_type);
         std::shared_ptr<ArrayMetadata> get_array_metadata(const std::string& name) const;
+        std::shared_ptr<ArrayMetadata> infer_array_metadata_from_access(std::shared_ptr<Expression> array_expr, const std::string& fallback_name);
         
         // Generate array address without dereferencing (for assignment targets)
         std::shared_ptr<EXP> generate_array_address(std::shared_ptr<ArrayAccessExpr> expr);

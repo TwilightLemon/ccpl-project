@@ -21,6 +21,8 @@ namespace twlm::ccpl::abstraction
             return "int";
         case DATA_TYPE::CHAR:
             return "char";
+        case DATA_TYPE::STRUCT:
+            return "struct";
         case DATA_TYPE::UNDEF:
             return "undefined";
         default:

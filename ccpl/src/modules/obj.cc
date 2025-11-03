@@ -597,17 +597,38 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
         return;
 
     case TAC_OP::VAR:
+    {
+        int var_size = 4; // Default size for basic types
+        
+        // Calculate size based on variable type
+        if (tac->a->is_array && tac->a->array_metadata)
+        {
+            // Array size = total elements * element_size
+            var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
+            std::clog << "Allocating array " << tac->a->name 
+                      << " with size " << var_size << " words" << std::endl;
+        }
+        else if (tac->a->data_type == DATA_TYPE::STRUCT && tac->a->struct_metadata)
+        {
+            // Struct size from metadata
+            var_size = tac->a->struct_metadata->total_size;
+            std::clog << "Allocating struct " << tac->a->name 
+                      << " with size " << var_size << " words" << std::endl;
+        }
+        
+        // Allocate space
         if (tac->a->scope == SYM_SCOPE::LOCAL)
         {
             tac->a->offset = tof;
-            tof += 4;
+            tof += var_size;
         }
         else
         {
             tac->a->offset = tos;
-            tos += 4;
+            tos += var_size;
         }
         return;
+    }
 
     case TAC_OP::RETURN:
         asm_return(tac->a);

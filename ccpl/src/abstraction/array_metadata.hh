@@ -12,11 +12,12 @@ namespace twlm::ccpl::abstraction
         std::vector<int> dimensions;         // Dimension sizes from outer to inner (e.g., [5, 10] for char[5][10])
         int element_size;                    // Size of each element in bytes/words (usually 4 for int/char in this TAC)
         DATA_TYPE base_type;                 // Base element type (e.g., CHAR for char[5][10])
+        std::string struct_type_name;        // If base_type is STRUCT, this is the struct type name
         
         ArrayMetadata() : element_size(4), base_type(DATA_TYPE::UNDEF) {}
         
-        ArrayMetadata(const std::string& n, const std::vector<int>& dims, DATA_TYPE btype, int elem_size = 4)
-            : name(n), dimensions(dims), element_size(elem_size), base_type(btype) {}
+        ArrayMetadata(const std::string& n, const std::vector<int>& dims, DATA_TYPE btype, int elem_size = 4, const std::string& stype = "")
+            : name(n), dimensions(dims), element_size(elem_size), base_type(btype), struct_type_name(stype) {}
         
         /**
          * Get the total number of elements in the array
@@ -58,7 +59,7 @@ namespace twlm::ccpl::abstraction
          * Get a readable string representation
          */
         std::string to_string() const {
-            std::string result = name + "[";
+            std::string result = name + " dimensions of [";
             for (size_t i = 0; i < dimensions.size(); ++i) {
                 if (i > 0) result += "][";
                 result += std::to_string(dimensions[i]);
