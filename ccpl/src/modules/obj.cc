@@ -763,14 +763,20 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
             else
                 output << "\tSTO (R" << r_ptr << "),R" << r_val << "\n";
             
+            // After pointer store, invalidate all registers since we don't know what was modified
+            // Write back all modified variables first, then clear all descriptors
             for (int i = R_GEN; i < R_NUM; i++)
             {
-                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR)
+                if (reg_desc[i].var && reg_desc[i].var->type == SYM_TYPE::VAR && 
+                    reg_desc[i].state == RegState::MODIFIED)
                 {
-                    if (reg_desc[i].state == RegState::MODIFIED && i != r_val)
-                        asm_write_back(i);
-                    rdesc_clear(i);
+                    asm_write_back(i);
                 }
+            }
+            // Clear all register descriptors to force reload from memory
+            for (int i = R_GEN; i < R_NUM; i++)
+            {
+                rdesc_clear(i);
             }
         }
         return;
