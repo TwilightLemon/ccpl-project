@@ -918,28 +918,6 @@ std::shared_ptr<SYM> TACGenerator::get_struct_type(const std::string& name) {
     return it->second;
 }
 
-std::shared_ptr<TAC> TACGenerator::do_member_access(std::shared_ptr<SYM> struct_var, 
-                                                    const std::string& field_name) {
-    // Note: This function is deprecated since TAC now uses flattened variable names
-    // Member access like p1.x is represented as a single variable "p1.x"
-    // This function is kept for backward compatibility but should not be used
-    
-    if (!struct_var) {
-        error("Invalid struct variable in member access");
-        return nullptr;
-    }
-    
-    std::string field_var_name = struct_var->name + "." + field_name;
-    auto field_var = get_var(field_var_name);
-    
-    if (!field_var) {
-        error("Field variable not found: " + field_var_name);
-        return nullptr;
-    }
-    
-    return nullptr;
-}
-
 // ============ Pointer Operations ============
 
 std::shared_ptr<EXP> TACGenerator::do_address_of(std::shared_ptr<EXP> exp) {

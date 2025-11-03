@@ -7,4 +7,9 @@ main(){
     output p;
     output "\n";
     output *p;
+
+    int force;
+    force=*p;
+    output "\n";
+    output force;
 }
