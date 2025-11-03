@@ -14,8 +14,8 @@ int main(){
     char *p;
     p=&a1[i].a[j][k];
     *p = 'q';
-    output a1[i].a[2][3];
+    output a1[0].a[2][3];
     output *p;
-    output a1[0].a[j][k];
+    output a1[0].a[2][3];
     return 0;
 }

@@ -744,8 +744,18 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
             
             if (r_ptr == r_val)
             {
-                output << "\tLOD R" << R_TP << ",R" << r_val << "\n";
-                r_val = R_TP;
+                // The second reg_alloc overwrote the first register
+                // Need to reload the pointer address from memory
+                r_ptr = R_TP;
+                if (tac->a->scope == SYM_SCOPE::LOCAL)
+                {
+                    output << "\tLOD R" << r_ptr << ",(R" << R_BP << "+" << tac->a->offset << ")\n";
+                }
+                else
+                {
+                    output << "\tLOD R" << R_TP << ",STATIC\n";
+                    output << "\tLOD R" << r_ptr << ",(R" << R_TP << "+" << tac->a->offset << ")\n";
+                }
             }
             
             if (tac->b->data_type == DATA_TYPE::CHAR)
