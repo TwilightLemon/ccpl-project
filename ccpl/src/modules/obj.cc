@@ -769,7 +769,7 @@ void ObjGenerator::generate()
     auto cur = tac_gen.get_tac_first();
     while (cur != nullptr)
     {
-        //output << "\n\t# " << cur->to_string() << "\n";
+        output << "\n\t# " << cur->to_string() << "\n";
         asm_code(cur);
         cur = cur->next;
     }

@@ -4,12 +4,12 @@ main(){
 
     char *p;
     p = &a;
-    output p;
+    output p;   # addr of a
     output "\n";
-    output *p;
+    output *p;  # a
 
     int force;
     force=*p;
     output "\n";
-    output force;
+    output force;   # ascii value of a
 }

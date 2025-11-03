@@ -8,11 +8,9 @@ struct A{
 };
 int main(){
     struct A a1[2];
-    a1[0].a[2][3]='z';
-    output a1[0].a[2][3];
-
     int i,j,k;
     i=0;j=2;k=3;
+
     char *p;
     p=&a1[0].a[j][k];
     *p = 'q';
