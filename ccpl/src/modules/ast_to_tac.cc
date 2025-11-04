@@ -61,7 +61,6 @@ namespace twlm::ccpl::modules
         if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY)
         {
             auto metadata = create_array_metadata(decl->name, decl->var_type);
-            array_metadata_map[decl->name] = metadata;
             return tac_gen.declare_array(decl->name, metadata);
         }
 
@@ -911,7 +910,7 @@ namespace twlm::ccpl::modules
         auto metadata = std::make_shared<ArrayMetadata>(name, dimensions, base_data_type, element_size, struct_type_name);
 
         // Debug output
-        std::cout << "Created array metadata: " << metadata->to_string()
+        std::cout << "Cached array metadata: " << metadata->to_string()
                   << " (stride[0]=" << metadata->get_stride(0)
                   << ", base_type=" << static_cast<int>(base_data_type)
                   << ", unit size=" << metadata->element_size;
@@ -920,7 +919,7 @@ namespace twlm::ccpl::modules
             std::cout << ", struct_type=" << struct_type_name;
         }
         std::cout << ")" << std::endl;
-
+        array_metadata_map[name] = metadata;    //auto store
         return metadata;
     }
 
@@ -968,7 +967,7 @@ namespace twlm::ccpl::modules
                 }
             }
         }
-        
+        //CREATE AND STORE FOR CACHE
         if (array_type && array_type->kind == TypeKind::ARRAY)
             return create_array_metadata(fallback_name, array_type);
         
@@ -1086,8 +1085,7 @@ namespace twlm::ccpl::modules
             base_addr = tac_gen.do_address_of(base_exp);
         }
 
-        if (constant_indices.size() == access_chain.size() && constant_indices.size() > 0 && 
-            expr->all_constant_access())
+        if (constant_indices.size() == access_chain.size() && constant_indices.size() > 0)
         {
             int element_offset = 0;
             for (size_t dim = 0; dim < constant_indices.size(); ++dim)
@@ -1155,21 +1153,21 @@ namespace twlm::ccpl::modules
                 tac_gen.do_bin(TAC_OP::ADD, element_offset, scaled_index) : scaled_index;
         }
 
-        std::shared_ptr<EXP> dynamic_word_offset = nullptr;
-        int constant_word_offset = constant_element_offset * metadata->element_size;
+        std::shared_ptr<EXP> dynamic_byte_offset = nullptr;
+        int constant_byte_offset = constant_element_offset * metadata->element_size;
         
         if (element_offset)
         {
             if (metadata->element_size == 1)
             {
-                dynamic_word_offset = element_offset;
+                dynamic_byte_offset = element_offset;
             }
             else
             {
                 auto size_const = tac_gen.mk_const(metadata->element_size);
                 auto size_exp = tac_gen.mk_exp(size_const, nullptr);
                 size_exp->data_type = DATA_TYPE::INT;
-                dynamic_word_offset = tac_gen.do_bin(TAC_OP::MUL, element_offset, size_exp);
+                dynamic_byte_offset = tac_gen.do_bin(TAC_OP::MUL, element_offset, size_exp);
             }
         }
 
@@ -1177,19 +1175,19 @@ namespace twlm::ccpl::modules
         result_temp->is_pointer = true;
         auto result_decl = tac_gen.mk_tac(TAC_OP::VAR, result_temp);
         
-        if (dynamic_word_offset && constant_word_offset != 0)
+        if (dynamic_byte_offset && constant_byte_offset != 0)
         {
-            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_word_offset->code);
+            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_byte_offset->code);
             
             auto temp1 = tac_gen.mk_tmp(DATA_TYPE::INT);
             temp1->is_pointer = true;
             auto temp1_decl = tac_gen.mk_tac(TAC_OP::VAR, temp1);
             temp1_decl->prev = result_decl;
             
-            auto add1_tac = tac_gen.mk_tac(TAC_OP::ADD, temp1, base_addr->place, dynamic_word_offset->place);
+            auto add1_tac = tac_gen.mk_tac(TAC_OP::ADD, temp1, base_addr->place, dynamic_byte_offset->place);
             add1_tac->prev = temp1_decl;
             
-            auto const_offset = tac_gen.mk_const(constant_word_offset);
+            auto const_offset = tac_gen.mk_const(constant_byte_offset);
             auto add2_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, temp1, const_offset);
             add2_tac->prev = add1_tac;
             
@@ -1197,20 +1195,20 @@ namespace twlm::ccpl::modules
             final_result->data_type = DATA_TYPE::INT;
             return final_result;
         }
-        else if (dynamic_word_offset)
+        else if (dynamic_byte_offset)
         {
-            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_word_offset->code);
-            auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, dynamic_word_offset->place);
+            result_decl->prev = tac_gen.join_tac(base_addr->code, dynamic_byte_offset->code);
+            auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, dynamic_byte_offset->place);
             add_tac->prev = result_decl;
             
             auto final_result = tac_gen.mk_exp(result_temp, add_tac);
             final_result->data_type = DATA_TYPE::INT;
             return final_result;
         }
-        else if (constant_word_offset != 0)
+        else if (constant_byte_offset != 0)
         {
             result_decl->prev = base_addr->code;
-            auto const_offset = tac_gen.mk_const(constant_word_offset);
+            auto const_offset = tac_gen.mk_const(constant_byte_offset);
             auto add_tac = tac_gen.mk_tac(TAC_OP::ADD, result_temp, base_addr->place, const_offset);
             add_tac->prev = result_decl;
             

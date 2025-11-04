@@ -56,7 +56,7 @@ void ObjGenerator::asm_write_back(int r)
             }
             else
             {
-                output << "\tSTO (R" << R_BP << var->offset << "),R" << r << "\n";
+               throw std::runtime_error("Negative offset for local variable not supported in write back");
             }
         }
         else
@@ -603,7 +603,6 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
     case TAC_OP::VAR:
     {
         int var_size = 4;
-        
         if (tac->a->is_array && tac->a->array_metadata)
         {
             var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
