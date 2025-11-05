@@ -3,21 +3,40 @@
 #include "modules/obj.hh"
 #include <iostream>
 #include <fstream>
+#include <cstring>
 
 twlm::ccpl::modules::ASTBuilder ast_builder;
 
 int main(int argc, char *argv[])
 {
-    if (argc < 2 || argc > 3)
+    if (argc < 2)
     {
-        std::cerr << "Usage: " << argv[0] << " <input_file> [output_file]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-o] <input_file> [output_file]" << std::endl;
+        std::cerr << "  -o: Enable TAC optimization" << std::endl;
         return 1;
     }
 
-    FILE *input_file = fopen(argv[1], "r");
+    bool enable_optimization = false;
+    int arg_index = 1;
+    
+    // Check for -o flag
+    if (argc > 1 && strcmp(argv[1], "-o") == 0)
+    {
+        enable_optimization = true;
+        arg_index = 2;
+    }
+    
+    if (arg_index >= argc)
+    {
+        std::cerr << "Error: No input file specified" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-o] <input_file> [output_file]" << std::endl;
+        return 1;
+    }
+
+    FILE *input_file = fopen(argv[arg_index], "r");
     if (!input_file)
     {
-        std::cerr << "Error: Cannot open file " << argv[1] << std::endl;
+        std::cerr << "Error: Cannot open file " << argv[arg_index] << std::endl;
         return 1;
     }
 
@@ -53,10 +72,14 @@ int main(int argc, char *argv[])
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
-        twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
-        opt.optimize();
-        std::clog << "=== Optimized TAC ===" << std::endl;
-        tac_gen.print_tac(std::clog);
+        if (enable_optimization)
+        {
+            twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
+            opt.optimize();
+            std::clog << "=== Optimized TAC ===" << std::endl;
+            tac_gen.print_tac(std::clog);
+            std::clog << std::endl;
+        }
 
         // Generate assembly code
         std::clog << "=== Assembly Code Generation ===" << std::endl;
@@ -64,13 +87,14 @@ int main(int argc, char *argv[])
         std::ostream* asm_output;
         std::ofstream asm_file;
         
-        if (argc == 3)
+        // Check if output file is specified (last argument)
+        if (arg_index + 1 < argc)
         {
             // Output to file
-            asm_file.open(argv[2]);
+            asm_file.open(argv[arg_index + 1]);
             if (!asm_file.is_open())
             {
-                std::cerr << "Error: Cannot open output file " << argv[2] << std::endl;
+                std::cerr << "Error: Cannot open output file " << argv[arg_index + 1] << std::endl;
                 return 1;
             }
             asm_output = &asm_file;
@@ -87,7 +111,7 @@ int main(int argc, char *argv[])
         if (asm_file.is_open())
         {
             asm_file.close();
-            std::clog << "Assembly code written to " << argv[2] << std::endl;
+            std::clog << "Assembly code written to " << argv[arg_index + 1] << std::endl;
         }
         std::clog<<"ccpl tasks completed successfully."<<std::endl;
         return 0;

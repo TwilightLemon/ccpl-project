@@ -225,6 +225,16 @@ namespace twlm::ccpl::modules
         std::vector<std::shared_ptr<ParamDecl>> param_list,
         std::shared_ptr<BlockStmt> body)
     {
+        //param type check
+        //only basic type is supported (pointer and array are treated as int32)
+        for(const auto& param : param_list){
+            if(param->param_type->kind !=TypeKind::BASIC &&
+               param->param_type->kind !=TypeKind::POINTER &&
+               param->param_type->kind !=TypeKind::ARRAY){
+                throw std::runtime_error("Function parameter type must be basic, pointer, or array type.");
+            }
+        }
+
         auto func_decl = std::make_shared<FuncDecl>(
             return_type, name, param_list, body);
         return func_decl;

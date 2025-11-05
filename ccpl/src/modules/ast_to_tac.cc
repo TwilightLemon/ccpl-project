@@ -104,21 +104,14 @@ namespace twlm::ccpl::modules
         std::shared_ptr<TAC> param_code = nullptr;
         for (auto &param : decl->parameters)
         {
-            if (param->param_type && param->param_type->kind == TypeKind::STRUCT)
-            {
-                expand_struct_fields(param->param_type->struct_name, param->name,
-                    [this, &param_code](const std::string &field_name, DATA_TYPE field_type)
-                    {
-                        auto field_param_tac = tac_gen.declare_para(field_name, field_type);
-                        param_code = tac_gen.join_tac(param_code, field_param_tac);
-                    });
-            }
-            else
-            {
-                DATA_TYPE param_type = convert_type_to_data_type(param->param_type);
-                auto param_tac = tac_gen.declare_para(param->name, param_type);
-                param_code = tac_gen.join_tac(param_code, param_tac);
-            }
+            // struct is not supported in func params. this is forbidden in the ast builder.
+            // if (param->param_type && param->param_type->kind == TypeKind::STRUCT)
+            DATA_TYPE param_type = convert_type_to_data_type(param->param_type);
+            bool is_pointer = (param->param_type && 
+                            (param->param_type->kind == TypeKind::POINTER ||
+                             param->param_type->kind == TypeKind::ARRAY));
+            auto param_tac = tac_gen.declare_para(param->name, param_type,is_pointer);
+            param_code = tac_gen.join_tac(param_code, param_tac);
         }
 
         std::shared_ptr<TAC> body_code = decl->body ? generate_block_stmt(decl->body) : nullptr;
@@ -126,35 +119,6 @@ namespace twlm::ccpl::modules
 
         tac_gen.leave_scope();
         current_function = nullptr;
-    }
-
-    void ASTToTACGenerator::expand_struct_fields(const std::string &struct_name, const std::string &base_name,
-                                                 std::function<void(const std::string &, DATA_TYPE)> handler)
-    {
-        auto struct_type = tac_gen.get_struct_type(struct_name);
-        if (!struct_type || !struct_type->struct_metadata)
-        {
-            std::cerr << "Error: Unknown struct type: " << struct_name << std::endl;
-            return;
-        }
-
-        for (const auto &field_meta : struct_type->struct_metadata->fields)
-        {
-            std::string field_name = base_name + "." + field_meta.name;
-
-            if (field_meta.type)
-            {
-                if (field_meta.type->kind == TypeKind::STRUCT)
-                {
-                    expand_struct_fields(field_meta.type->struct_name, field_name, handler);
-                }
-                else
-                {
-                    DATA_TYPE dtype = convert_type_to_data_type(field_meta.type);
-                    handler(field_name, dtype);
-                }
-            }
-        }
     }
 
     void ASTToTACGenerator::generate_struct_decl(std::shared_ptr<StructDecl> decl)
@@ -430,6 +394,13 @@ namespace twlm::ccpl::modules
         auto var = tac_gen.lookup_sym(expr->name);
         if (var && var->type == SYM_TYPE::VAR)
         {
+            //for an array identifier, it represent the addr of the array
+            if(var->is_array){
+                auto exp=tac_gen.mk_exp(var, nullptr);
+                auto addr = tac_gen.do_address_of(exp);
+                return addr;
+            }
+
             auto exp = tac_gen.mk_exp(var, nullptr);
             exp->data_type = var->data_type;
             return exp;

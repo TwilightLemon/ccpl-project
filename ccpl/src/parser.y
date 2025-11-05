@@ -225,14 +225,9 @@ param_decl_list: param_decl
 }
 ;
 
-param_decl: type_spec IDENTIFIER
+param_decl: type_spec var_declarator
 {
-    $$ = ast_builder.make_param_decl($1, $2);
-}
-| type_spec '*' IDENTIFIER
-{
-    auto pointer_type = ast_builder.make_pointer_type($1);
-    $$ = ast_builder.make_param_decl(pointer_type, $3);
+    $$ = ast_builder.make_param_decl($2.first, $2.second);
 }
 ;
 
