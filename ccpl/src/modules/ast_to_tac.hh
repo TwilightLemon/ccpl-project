@@ -72,8 +72,6 @@ namespace twlm::ccpl::modules
         DATA_TYPE convert_type_to_data_type(std::shared_ptr<Type> type);
         std::shared_ptr<EXP> expr_vector_to_list(const std::vector<std::shared_ptr<Expression>>& exprs);
         
-        void expand_struct_fields(const std::string& struct_name, const std::string& base_name,
-                                 std::function<void(const std::string&, DATA_TYPE)> handler);
         
         std::string infer_struct_type_from_expr(std::shared_ptr<Expression> expr);
         

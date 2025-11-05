@@ -16,4 +16,10 @@ int main()
     pp=&p;
     **pp='q';
     output a[2].cols[3];
+
+    int arr[5];
+    *arr=10;
+    output arr[0];
+    *(arr+1)=20;
+    output arr[1];
 }

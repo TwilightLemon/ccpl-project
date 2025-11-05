@@ -349,8 +349,8 @@ bool TACOptimizer::dead_code_elimination(std::shared_ptr<TAC> tac)
              current->op == TAC_OP::EQ || current->op == TAC_OP::NE ||
              current->op == TAC_OP::LT || current->op == TAC_OP::LE ||
              current->op == TAC_OP::GT || current->op == TAC_OP::GE) ||
-            current->op == TAC_OP::VAR &&
-                current->a && current->a->type == SYM_TYPE::VAR)
+             (current->op == TAC_OP::VAR &&
+                current->a && current->a->type == SYM_TYPE::VAR))
         {
 
             if (used_vars.find(current->a) == used_vars.end())

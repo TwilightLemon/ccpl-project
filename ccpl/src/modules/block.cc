@@ -9,15 +9,14 @@ bool BlockBuilder::is_leader(std::shared_ptr<TAC> tac, std::shared_ptr<TAC> prev
     if (!tac)
         return false;
 
-    // ENDFUNC 永远不应该成为基础块的leader
-    // 它应该是前一个基础块的结束指令
+    // ENDFUNC 是终止语句
     if (tac->op == TAC_OP::ENDFUNC)
         return false;
 
     if (tac == tac_first)
         return true;
 
-    // LABEL总是新基础块的开始
+    // LABEL 是入口语句
     if (tac->op == TAC_OP::LABEL)
         return true;
 
@@ -31,7 +30,6 @@ bool BlockBuilder::is_leader(std::shared_ptr<TAC> tac, std::shared_ptr<TAC> prev
             return true;
         }
     }
-
     return false;
 }
 
@@ -41,6 +39,7 @@ void BlockBuilder::build_basic_blocks()
     if (!tac_first)
         return;
 
+    // 先标记基础块的leader节点
     std::unordered_set<std::shared_ptr<TAC>> leaders;
     auto current = tac_first;
     std::shared_ptr<TAC> prev = nullptr;
@@ -54,6 +53,7 @@ void BlockBuilder::build_basic_blocks()
         current = current->next;
     }
 
+    //划分基础块
     int block_id = 0;
     current = tac_first;
     std::shared_ptr<BasicBlock> current_block = nullptr;
@@ -117,8 +117,7 @@ void BlockBuilder::build_cfg()
         auto block = basic_blocks[i];
         auto end_instr = block->end;
 
-        if (!end_instr)
-            continue;
+        if (!end_instr) throw std::runtime_error("Basic block has no end instruction");
 
         // 根据结束指令的类型确定后继
         switch (end_instr->op)
@@ -210,7 +209,6 @@ void BlockBuilder::print_basic_blocks(std::ostream &os)
     {
         os << "Block " << block->id << ":" << std::endl;
 
-        // 打印前驱
         os << "  Predecessors: ";
         if (block->predecessors.empty())
         {
@@ -227,7 +225,6 @@ void BlockBuilder::print_basic_blocks(std::ostream &os)
         }
         os << std::endl;
 
-        // 打印后继
         os << "  Successors: ";
         if (block->successors.empty())
         {
@@ -244,7 +241,6 @@ void BlockBuilder::print_basic_blocks(std::ostream &os)
         }
         os << std::endl;
 
-        // 打印指令
         os << "  Instructions:" << std::endl;
         auto instr = block->start;
         while (instr)

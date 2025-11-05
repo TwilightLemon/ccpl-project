@@ -381,7 +381,6 @@ void ObjGenerator::asm_return(std::shared_ptr<SYM> ret_val)
 
 void ObjGenerator::asm_head()
 {
-    output << "\t# Program Header\n";
     output << "\tLOD R" << R_BP << ",STACK\n";
     output << "\tSTO (R" << R_BP << "),0\n";
     output << "\tLOD R4,EXIT\n";
@@ -390,7 +389,6 @@ void ObjGenerator::asm_head()
 
 void ObjGenerator::asm_tail()
 {
-    output << "\n\t# Program Exit\n";
     output << "EXIT:\n";
     output << "\tEND\n";
 }
@@ -602,16 +600,7 @@ void ObjGenerator::asm_code(std::shared_ptr<TAC> tac)
 
     case TAC_OP::VAR:
     {
-        int var_size = 4;
-        
-        if (tac->a->is_array && tac->a->array_metadata)
-        {
-            var_size = tac->a->array_metadata->get_total_elements() * tac->a->array_metadata->element_size;
-        }
-        else if (tac->a->data_type == DATA_TYPE::STRUCT && tac->a->struct_metadata)
-        {
-            var_size = tac->a->struct_metadata->total_size;
-        }
+        int var_size = tac->a->get_size();
         
         if (tac->a->scope == SYM_SCOPE::LOCAL)
         {

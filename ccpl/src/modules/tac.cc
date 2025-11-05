@@ -83,7 +83,7 @@ std::shared_ptr<SYM> TACGenerator::mk_var(const std::string& name, DATA_TYPE dty
 }
 
 std::shared_ptr<SYM> TACGenerator::mk_tmp(DATA_TYPE dtype) {
-    std::string name = "t" + std::to_string(next_tmp++);
+    std::string name = "@t" + std::to_string(next_tmp++);
     auto sym = std::make_shared<SYM>();
     sym->type = SYM_TYPE::VAR;
     sym->data_type = dtype;
