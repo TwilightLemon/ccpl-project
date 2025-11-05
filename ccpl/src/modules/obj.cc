@@ -56,7 +56,7 @@ void ObjGenerator::asm_write_back(int r)
             }
             else
             {
-               throw std::runtime_error("Negative offset for local variable not supported in write back");
+                output << "\tSTO (R" << R_BP << var->offset << "),R" << r << "\n";
             }
         }
         else
