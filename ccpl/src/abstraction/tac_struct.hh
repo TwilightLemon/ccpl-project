@@ -41,7 +41,18 @@ namespace twlm::ccpl::abstraction
         SYM() : type(SYM_TYPE::UNDEF), data_type(DATA_TYPE::UNDEF),
                 scope(SYM_SCOPE::GLOBAL), offset(-1), label(-1),
                 return_type(DATA_TYPE::UNDEF), is_array(false), is_pointer(false) {}
-
+        
+        //get size in byte
+        int get_size() const{
+            int size=4; //by default
+            if(is_array && array_metadata){
+                size = array_metadata->get_total_elements() * array_metadata->element_size;
+            } else if(data_type == DATA_TYPE::STRUCT && struct_metadata){
+                size = struct_metadata->total_size;
+            }
+            return size;
+        }
+        
         std::string to_string() const
         {
             switch (type)
