@@ -110,6 +110,19 @@ namespace twlm::ccpl::modules
         
         auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer, base_type);
 
+        //for a ptr of struct, record the struct type name
+        if(is_pointer){
+            std::string struct_type_name;
+            auto base_cur=decl->var_type->base_type;
+            while(base_cur){
+                if(base_cur->is_struct()){
+                    struct_type_name=base_cur->struct_name;
+                }
+                base_cur=base_cur->base_type;
+            }
+            var_tac->a->struct_type_name=struct_type_name;
+        }
+
         if (decl->init_value)
         {
             if(!current_function){
@@ -713,11 +726,18 @@ namespace twlm::ccpl::modules
                 return nullptr;
             }
             
-            // Get address of base struct
-            auto base_exp = tac_gen.mk_exp(base_var, nullptr);
-            base_addr = tac_gen.do_address_of(base_exp);
-            
-            struct_type_name = base_var->struct_type_name;
+            if(expr->is_pointer_access&&base_var->is_pointer){
+                //pointer member access for struct
+                base_addr=tac_gen.mk_exp(base_var,nullptr);
+                struct_type_name=base_var->struct_type_name;
+            }else
+            {
+
+                // Get address of base struct
+                auto base_exp = tac_gen.mk_exp(base_var, nullptr);
+                base_addr = tac_gen.do_address_of(base_exp);
+                struct_type_name = base_var->struct_type_name;
+            }
         }
         else if (expr->object->kind == ASTNodeKind::ARRAY_ACCESS)
         {
