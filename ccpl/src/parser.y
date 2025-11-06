@@ -202,6 +202,17 @@ var_decl_list: var_declarator
     auto var = ast_builder.make_var_decl($3.first, $3.second);
     $$.push_back(var);
 }
+| var_declarator '=' expression
+{
+    auto var = ast_builder.make_var_decl($1.first, $1.second, $3);
+    $$.push_back(var);
+}
+| var_decl_list ',' var_declarator '=' expression
+{
+    $$ = $1;
+    auto var = ast_builder.make_var_decl($3.first, $3.second, $5);
+    $$.push_back(var);
+}
 ;
 
 param_list: /* empty */

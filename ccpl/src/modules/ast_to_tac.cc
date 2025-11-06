@@ -80,8 +80,11 @@ namespace twlm::ccpl::modules
         
         auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer, base_type);
 
-        if (decl->init_value && current_function)
+        if (decl->init_value)
         {
+            if(!current_function){
+                throw std::runtime_error("Error: Global variable initialization not supported");
+            }
             auto init_exp = generate_expression(decl->init_value);
             auto var_sym = tac_gen.get_var(decl->name);
             auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
