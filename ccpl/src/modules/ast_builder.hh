@@ -51,6 +51,7 @@ namespace twlm::ccpl::modules
                                                        bool is_pointer_access = false);
         std::shared_ptr<Expression> make_address_of(std::shared_ptr<Expression> operand);
         std::shared_ptr<Expression> make_dereference(std::shared_ptr<Expression> operand);
+        std::shared_ptr<Expression> make_initializer_list(const std::vector<std::shared_ptr<Expression>>& elements);
 
         // Statement builders
         std::shared_ptr<Statement> make_expr_stmt(std::shared_ptr<Expression> expr);

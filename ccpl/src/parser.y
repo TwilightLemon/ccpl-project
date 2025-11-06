@@ -43,7 +43,7 @@
 %type <std::shared_ptr<ParamDecl>> param_decl
 %type <std::vector<std::shared_ptr<ParamDecl>>> param_list param_decl_list
 
-%type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr
+%type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr initializer_list_expr
 %type <std::vector<std::shared_ptr<Expression>>> arg_list arg_list_nonempty
 
 %type <std::shared_ptr<Type>> type_spec 
@@ -421,6 +421,12 @@ assign_expr: expression '=' expression
 }
 ;
 
+initializer_list_expr: '{' arg_list '}'
+{
+    $$ = ast_builder.make_initializer_list($2);
+}
+;
+
 expression: const_expr
 {
     $$ = $1;
@@ -436,6 +442,10 @@ expression: const_expr
 | IDENTIFIER
 {
     $$ = ast_builder.make_identifier($1);
+}
+| initializer_list_expr
+{
+    $$ = $1;
 }
 | expression '+' expression
 {

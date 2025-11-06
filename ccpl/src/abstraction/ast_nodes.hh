@@ -87,6 +87,7 @@ namespace twlm::ccpl::abstraction
         MEMBER_ACCESS,
         ADDRESS_OF,
         DEREFERENCE,
+        INITIALIZER_LIST,
         
         // Statements
         EXPR_STMT,
@@ -165,6 +166,25 @@ namespace twlm::ccpl::abstraction
         
         std::string to_string() const override {
             return "\"" + value + "\"";
+        }
+    };
+
+    struct InitializerListExpr : public Expression {
+        std::vector<std::shared_ptr<Expression>> elements;
+
+        InitializerListExpr(const std::vector<std::shared_ptr<Expression>>& elems)
+            : Expression(ASTNodeKind::INITIALIZER_LIST), elements(elems) {}
+
+        std::string to_string() const override {
+            std::string result = "{ ";
+            for (size_t i = 0; i < elements.size(); ++i) {
+                result += elements[i]->to_string();
+                if (i < elements.size() - 1) {
+                    result += ", ";
+                }
+            }
+            result += " }";
+            return result;
         }
     };
 
