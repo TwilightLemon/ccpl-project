@@ -1,12 +1,15 @@
+struct Q{
+    char c,d;
+};
 struct A{
     int id,q;
+    struct Q r;
 };
 
+struct A a1;
 int main(){
-    struct A a1;
-    int a[5];
-    a[1]=9;
-    a1.q=a[1];
-    output a1.q;
+    int *p=&a1;
+    p[3]='c';
+    output a1.r.d;
     return 0;
 }

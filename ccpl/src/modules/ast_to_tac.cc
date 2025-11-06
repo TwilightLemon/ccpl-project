@@ -61,7 +61,37 @@ namespace twlm::ccpl::modules
         if (decl->var_type && decl->var_type->kind == TypeKind::ARRAY)
         {
             auto metadata = create_array_metadata(decl->name, decl->var_type);
-            return tac_gen.declare_array(decl->name, metadata);
+            auto tac = tac_gen.declare_array(decl->name, metadata);
+
+            if(decl->init_value && current_function && decl->init_value->kind == ASTNodeKind::INITIALIZER_LIST){
+                auto init_list = std::dynamic_pointer_cast<InitializerListExpr>(decl->init_value);
+                if(init_list->elements.size() > metadata->get_total_elements()){
+                    throw std::runtime_error("Error: Array initializer size mismatch for array " + decl->name);
+                }
+
+                std::shared_ptr<TAC> init_code = nullptr;
+                auto arr_sym = tac_gen.do_address_of(tac_gen.mk_exp(tac_gen.get_var(decl->name), nullptr));
+                init_code = tac_gen.join_tac(init_code, arr_sym->code);
+
+                int stride = metadata->element_size * metadata->get_stride(0);
+                for(size_t i=0;i<init_list->elements.size();++i){
+                    auto elem_exp = generate_expression(init_list->elements[i]);
+                    init_code = tac_gen.join_tac(init_code, elem_exp->code);
+                    auto const_offset = tac_gen.mk_const(i * stride);
+                    //calculate address
+                    auto addr_tmp = tac_gen.mk_tmp(DATA_TYPE::INT);
+                    auto tmp_tac=tac_gen.mk_tac(TAC_OP::VAR,addr_tmp);
+                    auto addr_calc = tac_gen.mk_tac(TAC_OP::ADD, addr_tmp, arr_sym->place, const_offset);
+                    //store value
+                    auto store_tac = tac_gen.mk_tac(TAC_OP::STORE_PTR, addr_tmp, elem_exp->place, nullptr);
+                    
+                    init_code = tac_gen.join_tac(init_code, tmp_tac);
+                    init_code = tac_gen.join_tac(init_code, addr_calc);
+                    init_code = tac_gen.join_tac(init_code, store_tac);
+                }
+                return tac_gen.join_tac(tac, init_code);
+            }
+            return tac;    
         }
 
         if (decl->var_type && decl->var_type->kind == TypeKind::STRUCT)
@@ -80,8 +110,27 @@ namespace twlm::ccpl::modules
         
         auto var_tac = tac_gen.declare_var(decl->name, dtype, is_pointer, base_type);
 
-        if (decl->init_value && current_function)
+        //for a ptr of struct, record the struct type name
+        if(is_pointer){
+            std::string struct_type_name;
+            auto base_cur=decl->var_type->base_type;
+            while(base_cur){
+                if(base_cur->is_struct()){
+                    struct_type_name=base_cur->struct_name;
+                }
+                base_cur=base_cur->base_type;
+            }
+            var_tac->a->struct_type_name=struct_type_name;
+        }
+
+        if (decl->init_value)
         {
+            if(!current_function){
+                throw std::runtime_error("Error: Global variable initialization not supported");
+            }
+            if(decl->init_value->kind ==ASTNodeKind::INITIALIZER_LIST){
+                throw std::runtime_error("Error: Array initializer not supported in basic var decl");
+            }
             auto init_exp = generate_expression(decl->init_value);
             auto var_sym = tac_gen.get_var(decl->name);
             auto assign_tac = tac_gen.do_assign(var_sym, init_exp);
@@ -677,11 +726,18 @@ namespace twlm::ccpl::modules
                 return nullptr;
             }
             
-            // Get address of base struct
-            auto base_exp = tac_gen.mk_exp(base_var, nullptr);
-            base_addr = tac_gen.do_address_of(base_exp);
-            
-            struct_type_name = base_var->struct_type_name;
+            if(expr->is_pointer_access&&base_var->is_pointer){
+                //pointer member access for struct
+                base_addr=tac_gen.mk_exp(base_var,nullptr);
+                struct_type_name=base_var->struct_type_name;
+            }else
+            {
+
+                // Get address of base struct
+                auto base_exp = tac_gen.mk_exp(base_var, nullptr);
+                base_addr = tac_gen.do_address_of(base_exp);
+                struct_type_name = base_var->struct_type_name;
+            }
         }
         else if (expr->object->kind == ASTNodeKind::ARRAY_ACCESS)
         {

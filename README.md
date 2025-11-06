@@ -36,7 +36,7 @@ Tested on Ubuntu 24.04 LTS WSL2.
 
 ## Convention
 1. All variables are stored in the stack segment!!! Because there is not a memory management module (like `malloc`) yet.
-2. Only basic type is supported in function parameters and return values.
+2. Only basic type is supported in function parameters and return values (array and pointer types are supported).
 3. There is no compile-time type checking for function calls yet.
 
 ## The ccpl Language
@@ -50,7 +50,7 @@ ccpl is a C-style statically-typed programming language with support for basic d
 - `int` - Integer type
 - `char` - Character type
 
-For simplicity, all basic types are treated as 4-byte entities.
+> For simplicity, all basic types are treated as 4-byte entities.
 
 #### Composite Types
 - **Pointers**: Declared with `*` operator (e.g., `int *ptr`, `char *p`)
@@ -62,10 +62,23 @@ For simplicity, all basic types are treated as 4-byte entities.
 #### Declaration
 Variables must be declared before use with type specification:
 ```c
-int i, j, k;
+int i, j, *k;
 char c;
 int *ptr;
 char arr[100];
+struct A a1, *pA;
+```
+
+Basic types and arrays can be initialized at declaration:
+```c 
+int x = 10, y = 20;
+struct A a1, *pA=&a1;
+int arr[3] = {1, 2, 3};
+```
+Note that you may not initialize struct variables and string literals at declaration.
+```c
+char str[5] = "Hello"; // Invalid
+struct A a1 = {1, 'a'}; // Invalid
 ```
 
 #### Scope
@@ -99,6 +112,7 @@ char arr[100];
 #### Member Access Operators
 - `.` - Structure member access
 - `[]` - Array subscript
+- `->` - Pointer to structure member access
 
 ### Literals
 
@@ -110,6 +124,10 @@ Single characters enclosed in single quotes: `'a'`, `'A'`, `'0'`
 
 #### String Literals
 Sequences of characters enclosed in double quotes: `"Hello"`, `"World\n"`
+
+#### Initializer Lists
+- Curly braces `{}` used to initialize arrays and structures
+- Example: `int arr[3] = {1, 2, 3};`
 
 ### Structures
 

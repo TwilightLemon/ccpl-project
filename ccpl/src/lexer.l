@@ -11,6 +11,8 @@
 
 %%
 
+"->" {return yy::parser::make_RIGHT_ARROW();}
+
 ";"  {  return yy::parser::make_EOL();  }
 
 "int"  {  return yy::parser::make_INT();  }

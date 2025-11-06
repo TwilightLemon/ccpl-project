@@ -27,6 +27,7 @@
 %token IF ELSE FOR WHILE INPUT OUTPUT RETURN
 %token BREAK CONTINUE
 %token SWITCH CASE DEFAULT
+%token RIGHT_ARROW
 
 %token <std::string> IDENTIFIER TEXT
 %token <int> INTEGER
@@ -43,7 +44,7 @@
 %type <std::shared_ptr<ParamDecl>> param_decl
 %type <std::vector<std::shared_ptr<ParamDecl>>> param_list param_decl_list
 
-%type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr
+%type <std::shared_ptr<Expression>> expression const_expr func_call_expr assign_expr initializer_list_expr member_access_expr
 %type <std::vector<std::shared_ptr<Expression>>> arg_list arg_list_nonempty
 
 %type <std::shared_ptr<Type>> type_spec 
@@ -200,6 +201,17 @@ var_decl_list: var_declarator
 {
     $$ = $1;
     auto var = ast_builder.make_var_decl($3.first, $3.second);
+    $$.push_back(var);
+}
+| var_declarator '=' expression
+{
+    auto var = ast_builder.make_var_decl($1.first, $1.second, $3);
+    $$.push_back(var);
+}
+| var_decl_list ',' var_declarator '=' expression
+{
+    $$ = $1;
+    auto var = ast_builder.make_var_decl($3.first, $3.second, $5);
     $$.push_back(var);
 }
 ;
@@ -390,23 +402,25 @@ assign_expr: expression '=' expression
 {
     $$ = ast_builder.make_assign($1, $3);
 }
-| expression '[' expression ']' '=' expression
-{
-    auto array_access = ast_builder.make_array_access($1, $3);
-    $$ = ast_builder.make_assign(array_access, $6);
-}
-| expression '.' IDENTIFIER '=' expression
-{
-    auto member = ast_builder.make_member_access($1, $3, false);
-    $$ = ast_builder.make_assign(member, $5);
-}
-| expression '[' expression ']'
+;
+
+member_access_expr: expression '[' expression ']'
 {
     $$ = ast_builder.make_array_access($1, $3);
 }
 | expression '.' IDENTIFIER
 {
     $$ = ast_builder.make_member_access($1, $3, false);
+}
+| expression RIGHT_ARROW IDENTIFIER
+{
+    $$= ast_builder.make_member_access($1,$3,true);
+}
+;
+
+initializer_list_expr: '{' arg_list '}'
+{
+    $$ = ast_builder.make_initializer_list($2);
 }
 ;
 
@@ -425,6 +439,14 @@ expression: const_expr
 | IDENTIFIER
 {
     $$ = ast_builder.make_identifier($1);
+}
+| member_access_expr
+{
+    $$=$1;
+}
+| initializer_list_expr
+{
+    $$ = $1;
 }
 | expression '+' expression
 {

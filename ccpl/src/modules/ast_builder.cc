@@ -43,6 +43,12 @@ namespace twlm::ccpl::modules
 
     // ============ Expression Builders ============
 
+    std::shared_ptr<Expression> ASTBuilder::make_initializer_list(
+        const std::vector<std::shared_ptr<Expression>>& elements)
+    {
+        return std::make_shared<InitializerListExpr>(elements);
+    }
+
     std::shared_ptr<Expression> ASTBuilder::make_const_int(int value)
     {
         return std::make_shared<ConstIntExpr>(value);
