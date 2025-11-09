@@ -7,6 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/ccpl/build/ccpl",
             "args": [
+                "-o",
                 "${input:testFile}"
             ],
             "stopAtEntry": false,
