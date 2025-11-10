@@ -623,7 +623,7 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
     auto end=block->end;
     bool changed = true;
     int iter = 0;
-    const int MAX_ITER = 10;
+    const int MAX_ITER = 20;
 
     while(changed && iter < MAX_ITER)
     {
@@ -904,17 +904,18 @@ bool TACOptimizer::is_loop_invariant(std::shared_ptr<TAC> tac, std::shared_ptr<B
     if (!tac)
         return false;
     
-    // 只考虑算术和比较运算
+    // 考虑算术运算、比较运算和拷贝操作
     if (tac->op != TAC_OP::ADD && tac->op != TAC_OP::SUB &&
         tac->op != TAC_OP::MUL && tac->op != TAC_OP::DIV &&
         tac->op != TAC_OP::LT && tac->op != TAC_OP::LE &&
         tac->op != TAC_OP::GT && tac->op != TAC_OP::GE &&
-        tac->op != TAC_OP::EQ && tac->op != TAC_OP::NE)
+        tac->op != TAC_OP::EQ && tac->op != TAC_OP::NE &&
+        tac->op != TAC_OP::COPY)
     {
         return false;
     }
     
-    // 检查操作数
+    // 检查操作数是否在循环内被修改
     auto check_operand = [&](std::shared_ptr<SYM> sym) -> bool {
         if (!sym)
             return true;
@@ -949,6 +950,13 @@ bool TACOptimizer::is_loop_invariant(std::shared_ptr<TAC> tac, std::shared_ptr<B
         return false;
     };
     
+    // 对于 COPY 指令（a = b），只需检查右操作数
+    if (tac->op == TAC_OP::COPY)
+    {
+        return check_operand(tac->b);
+    }
+    
+    // 对于二元运算，检查两个操作数
     return check_operand(tac->b) && check_operand(tac->c);
 }
 
@@ -1025,6 +1033,24 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
     // 收集可以外提的指令及其对应的 var 声明
     std::vector<std::pair<std::shared_ptr<TAC>, std::shared_ptr<TAC>>> invariant_pairs;
     
+    // 收集所有循环内的定值（用于判断循环不变量）
+    std::unordered_map<std::string, std::unordered_set<std::shared_ptr<TAC>>> loop_defs;
+    for (auto& block : loop_blocks)
+    {
+        auto tac = block->start;
+        while (tac)
+        {
+            auto def = get_def(tac);
+            if (def)
+            {
+                loop_defs[def->name].insert(tac);
+            }
+            if (tac == block->end)
+                break;
+            tac = tac->next;
+        }
+    }
+    
     for (auto& block : loop_blocks)
     {
         if (block == loop_header)
@@ -1038,6 +1064,18 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
                 auto def = get_def(tac);
                 if (def)
                 {
+                    // 检查该变量在循环内是否只有这一次定值
+                    // 如果有多次定值，说明它在循环中会变化，不应外提
+                    auto it = loop_defs.find(def->name);
+                    if (it != loop_defs.end() && it->second.size() > 1)
+                    {
+                        // 有多次定值，不外提
+                        if (tac == block->end)
+                            break;
+                        tac = tac->next;
+                        continue;
+                    }
+                    
                     // 查找该变量的 var 声明
                     std::shared_ptr<TAC> var_decl = nullptr;
                     
@@ -1356,7 +1394,7 @@ void TACOptimizer::optimize()
     // 多轮迭代优化
     bool global_changed = true;
     int global_iter = 0;
-    const int MAX_GLOBAL_ITER = 5;
+    const int MAX_GLOBAL_ITER = 20;
     
     while (global_changed && global_iter < MAX_GLOBAL_ITER)
     {
@@ -1374,9 +1412,6 @@ void TACOptimizer::optimize()
                 std::clog << "  - CSE applied in block " << block->id << std::endl;
             }
         }
-        block_builder.build();
-        blocks = block_builder.get_basic_blocks();
-        block_builder.print_basic_blocks(std::clog);
         
         // 2. 循环不变量外提
         for (auto& block : blocks)
@@ -1390,26 +1425,12 @@ void TACOptimizer::optimize()
                 }
             }
         }
-        block_builder.build();
-        blocks = block_builder.get_basic_blocks();
-        block_builder.print_basic_blocks(std::clog);
-        
-                    if(blocks[6]->id==6)
-            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
 
         // 3. 局部优化（基本块内）
         for (auto& block : blocks)
         {
-            if(blocks[6]->id==6)
-            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
-            std::clog<<"Optimizing block "<<block->id<<std::endl;
             optimize_block_local(block);
-             if(blocks[6]->id==6)
-            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
         }
-        block_builder.build();
-        blocks = block_builder.get_basic_blocks();
-        block_builder.print_basic_blocks(std::clog);
         
         // 4. 数据流分析
         compute_reaching_definitions(blocks);
@@ -1422,7 +1443,6 @@ void TACOptimizer::optimize()
             global_changed = true;
             std::clog << "  - Global constant propagation applied" << std::endl;
         }
-        block_builder.print_basic_blocks(std::clog);
         
         // 再次进行局部常量折叠（处理新产生的常量）
         for (auto& block : blocks)
@@ -1432,9 +1452,7 @@ void TACOptimizer::optimize()
                 global_changed = true;
             }
         }
-        block_builder.print_basic_blocks(std::clog);
         
-        //TODO: fix: 可能造成循环体内，经过替换的变量被错误消除；arr-while.m中染色j=@t5,但是j新的赋值没有应用到@t5内。
         if (global_dead_code_elimination(blocks))
         {
             global_changed = true;
@@ -1444,17 +1462,12 @@ void TACOptimizer::optimize()
             blocks = block_builder.get_basic_blocks();
             std::clog << "  - Rebuilt CFG global_dead_code_elimination" << std::endl;
         }
-        block_builder.print_basic_blocks(std::clog);
         
         // 6. 控制流简化
         if (simplify_control_flow(tac_first))
         {
             global_changed = true;
             std::clog << "  - Control flow simplification applied" << std::endl;
-
-            block_builder.build();
-            blocks = block_builder.get_basic_blocks();
-            std::clog << "  - Rebuilt CFG after control flow simplification" << std::endl;
         }
         
         // 7. 不可达代码消除
@@ -1462,13 +1475,11 @@ void TACOptimizer::optimize()
         {
             global_changed = true;
             std::clog << "  - Unreachable code elimination applied" << std::endl;
-
-            block_builder.build();
-            blocks = block_builder.get_basic_blocks();
-            std::clog << "  - Rebuilt CFG after eliminate_unreachable_code" << std::endl;
         }
 
-        block_builder.print_basic_blocks(std::clog);
+        block_builder.build();
+        blocks = block_builder.get_basic_blocks();
+        //block_builder.print_basic_blocks(std::clog);
     }
     
     // 最后一轮清理：删除未使用的变量声明

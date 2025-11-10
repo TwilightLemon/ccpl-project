@@ -32,6 +32,9 @@ int main(int argc, char *argv[])
         std::cerr << "Usage: " << argv[0] << " [-o] <input_file> [output_file]" << std::endl;
         return 1;
     }
+    
+    const char *logo ="                     ___      \n                    /\\_ \\     \n  ___    ___   _____\\//\\ \\    \n /'___\\ /'___\\/\\ '__`\\\\ \\ \\   \n/\\ \\__//\\ \\__/\\ \\ \\L\\ \\\\_\\ \\_ \n\\ \\____\\ \\____\\\\ \\ ,__//\\____\\\n \\/____/\\/____/ \\ \\ \\/ \\/____/\n                 \\ \\_\\        \n                  \\/_/        \n";
+    std::clog<< logo<<"    v0.1 powered by twlm"<<std::endl<<std::endl;
 
     FILE *input_file = fopen(argv[arg_index], "r");
     if (!input_file)
