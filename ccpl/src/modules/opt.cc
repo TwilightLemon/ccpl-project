@@ -619,8 +619,14 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
 // 局部优化（基本块内）
 void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
 {
+    // 安全检查：确保块有有效的指令
+    if (!block->start || !block->end)
+    {
+        return;
+    }
+    
     auto start = block->start;
-    auto end=block->end;
+    auto end = block->end;
     bool changed = true;
     int iter = 0;
     const int MAX_ITER = 20;
@@ -630,11 +636,11 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
         changed = false;
         iter++;
 
-        if (local_constant_folding(start,end))
+        if (local_constant_folding(start, end))
         {
             changed = true;
         }
-        if (local_copy_propagation(start,end))
+        if (local_copy_propagation(start, end))
         {
             changed = true;
         }
@@ -761,25 +767,32 @@ bool TACOptimizer::global_dead_code_elimination(const std::vector<std::shared_pt
                 if (instr->op != TAC_OP::CALL && instr->op != TAC_OP::INPUT &&
                     instr->op != TAC_OP::LOAD_PTR && instr->op != TAC_OP::STORE_PTR)
                 {
-                    // 删除该指令
-                    if (instr->prev)
+                    // 保存指针后删除该指令
+                    auto instr_prev = instr->prev;
+                    auto instr_next = instr->next;
+                    
+                    if (instr_prev)
                     {
-                        instr->prev->next = instr->next;
+                        instr_prev->next = instr_next;
                     }
-                    if (instr->next)
+                    if (instr_next)
                     {
-                        instr->next->prev = instr->prev;
+                        instr_next->prev = instr_prev;
                     }
                     
                     // 更新块的起始或结束指针
                     if (instr == block->start)
                     {
-                        block->start = instr->next;
+                        block->start = instr_next;
                     }
                     if (instr == block->end)
                     {
-                        block->end = instr->prev;
+                        block->end = instr_prev;
                     }
+                    
+                    // 清空被删除指令的链接
+                    instr->prev = nullptr;
+                    instr->next = nullptr;
                     
                     changed = true;
                     continue;
@@ -1137,20 +1150,81 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             // 将不变指令和其 var 声明移动到preheader的末尾
             for (auto& [inv_tac, var_decl] : invariant_pairs)
             {
+                // 找到包含这些指令的源块
+                std::shared_ptr<BasicBlock> source_block = nullptr;
+                for (auto& block : loop_blocks)
+                {
+                    auto check = block->start;
+                    while (check)
+                    {
+                        if (check == inv_tac || check == var_decl)
+                        {
+                            source_block = block;
+                            break;
+                        }
+                        if (check == block->end)
+                            break;
+                        check = check->next;
+                    }
+                    if (source_block)
+                        break;
+                }
+                
                 // 先移除 var 声明（如果存在）
                 if (var_decl)
                 {
-                    if (var_decl->prev)
-                        var_decl->prev->next = var_decl->next;
-                    if (var_decl->next)
-                        var_decl->next->prev = var_decl->prev;
+                    // 更新源块的 start/end 指针
+                    if (source_block)
+                    {
+                        if (var_decl == source_block->start)
+                        {
+                            source_block->start = var_decl->next;
+                        }
+                        if (var_decl == source_block->end)
+                        {
+                            source_block->end = var_decl->prev;
+                        }
+                    }
+                    
+                    // 保存指针后断开链接
+                    auto var_prev = var_decl->prev;
+                    auto var_next = var_decl->next;
+                    
+                    if (var_prev)
+                        var_prev->next = var_next;
+                    if (var_next)
+                        var_next->prev = var_prev;
+                    
+                    // 清空被移除指令的链接（防止悬空指针）
+                    var_decl->prev = nullptr;
+                    var_decl->next = nullptr;
                 }
                 
                 // 移除计算指令
-                if (inv_tac->prev)
-                    inv_tac->prev->next = inv_tac->next;
-                if (inv_tac->next)
-                    inv_tac->next->prev = inv_tac->prev;
+                if (source_block)
+                {
+                    if (inv_tac == source_block->start)
+                    {
+                        source_block->start = inv_tac->next;
+                    }
+                    if (inv_tac == source_block->end)
+                    {
+                        source_block->end = inv_tac->prev;
+                    }
+                }
+                
+                // 保存指针后断开链接
+                auto inv_prev = inv_tac->prev;
+                auto inv_next = inv_tac->next;
+                
+                if (inv_prev)
+                    inv_prev->next = inv_next;
+                if (inv_next)
+                    inv_next->prev = inv_prev;
+                
+                // 清空被移除指令的链接（防止悬空指针）
+                inv_tac->prev = nullptr;
+                inv_tac->next = nullptr;
                 
                 // 插入到preheader末尾之前
                 auto insert_pos = preheader->end;
@@ -1215,12 +1289,17 @@ bool TACOptimizer::simplify_control_flow(std::shared_ptr<TAC> tac_start)
                     std::clog << "    Simplified: ifz " << cond_value << " -> removed (never jumps)" << std::endl;
                     
                     auto next = current->next;
+                    auto prev = current->prev;
                     
                     // 删除该指令
-                    if (current->prev)
-                        current->prev->next = current->next;
-                    if (current->next)
-                        current->next->prev = current->prev;
+                    if (prev)
+                        prev->next = next;
+                    if (next)
+                        next->prev = prev;
+                    
+                    // 清空链接
+                    current->prev = nullptr;
+                    current->next = nullptr;
                     
                     current = next;
                     changed = true;
@@ -1239,10 +1318,16 @@ bool TACOptimizer::simplify_control_flow(std::shared_ptr<TAC> tac_start)
                 std::clog << "    Removed redundant goto to next label" << std::endl;
                 
                 auto next = current->next;
-                if (current->prev)
-                    current->prev->next = current->next;
-                if (current->next)
-                    current->next->prev = current->prev;
+                auto prev = current->prev;
+                
+                if (prev)
+                    prev->next = next;
+                if (next)
+                    next->prev = prev;
+                
+                // 清空链接
+                current->prev = nullptr;
+                current->next = nullptr;
                 
                 current = next;
                 changed = true;
@@ -1304,11 +1389,17 @@ bool TACOptimizer::eliminate_unreachable_code(std::vector<std::shared_ptr<BasicB
             while (tac)
             {
                 auto next = (tac == block->end) ? nullptr : tac->next;
+                auto prev = tac->prev;
+                auto curr_next = tac->next;
                 
-                if (tac->prev)
-                    tac->prev->next = tac->next;
-                if (tac->next)
-                    tac->next->prev = tac->prev;
+                if (prev)
+                    prev->next = curr_next;
+                if (curr_next)
+                    curr_next->prev = prev;
+                
+                // 清空被删除指令的链接
+                tac->prev = nullptr;
+                tac->next = nullptr;
                 
                 tac = next;
                 if (!next)
@@ -1365,11 +1456,18 @@ bool TACOptimizer::eliminate_unused_var_declarations(std::shared_ptr<TAC> tac_st
             {
                 std::clog << "    Removing unused var declaration: " << current->a->name << std::endl;
                 
+                auto prev = current->prev;
+                auto curr_next = current->next;
+                
                 // 删除该声明
-                if (current->prev)
-                    current->prev->next = current->next;
-                if (current->next)
-                    current->next->prev = current->prev;
+                if (prev)
+                    prev->next = curr_next;
+                if (curr_next)
+                    curr_next->prev = prev;
+                
+                // 清空链接
+                current->prev = nullptr;
+                current->next = nullptr;
                 
                 changed = true;
             }
