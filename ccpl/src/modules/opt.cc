@@ -450,12 +450,12 @@ void TACOptimizer::compute_constant_propagation(const std::vector<std::shared_pt
 }
 
 // 局部常量折叠（只处理立即数常量）
-bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac)
+bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end)
 {
     bool changed = false;
     auto current = tac;
 
-    while (current != nullptr)
+    while (current != end->next)
     {
         // 二元运算
         if (current->op == TAC_OP::ADD || current->op == TAC_OP::SUB ||
@@ -565,13 +565,13 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac)
 }
 
 // 局部拷贝传播
-bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac)
+bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end)
 {
     bool changed = false;
     std::unordered_map<std::shared_ptr<SYM>, std::shared_ptr<SYM>> copy_map;
 
     auto current = tac;
-    while (current != nullptr)
+    while (current != end->next)
     {
         // 处理简单的拷贝赋值 a = b（b不是常量）
         if (current->op == TAC_OP::COPY && current->a && current->b &&
@@ -620,6 +620,7 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac)
 void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
 {
     auto start = block->start;
+    auto end=block->end;
     bool changed = true;
     int iter = 0;
     const int MAX_ITER = 10;
@@ -629,11 +630,11 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
         changed = false;
         iter++;
 
-        if (local_constant_folding(start))
+        if (local_constant_folding(start,end))
         {
             changed = true;
         }
-        if (local_copy_propagation(start))
+        if (local_copy_propagation(start,end))
         {
             changed = true;
         }
@@ -1373,6 +1374,9 @@ void TACOptimizer::optimize()
                 std::clog << "  - CSE applied in block " << block->id << std::endl;
             }
         }
+        block_builder.build();
+        blocks = block_builder.get_basic_blocks();
+        block_builder.print_basic_blocks(std::clog);
         
         // 2. 循环不变量外提
         for (auto& block : blocks)
@@ -1386,12 +1390,26 @@ void TACOptimizer::optimize()
                 }
             }
         }
+        block_builder.build();
+        blocks = block_builder.get_basic_blocks();
+        block_builder.print_basic_blocks(std::clog);
         
+                    if(blocks[6]->id==6)
+            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
+
         // 3. 局部优化（基本块内）
         for (auto& block : blocks)
         {
+            if(blocks[6]->id==6)
+            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
+            std::clog<<"Optimizing block "<<block->id<<std::endl;
             optimize_block_local(block);
+             if(blocks[6]->id==6)
+            std::clog<< blocks[6]->start->next->next->b->name<<std::endl;
         }
+        block_builder.build();
+        blocks = block_builder.get_basic_blocks();
+        block_builder.print_basic_blocks(std::clog);
         
         // 4. 数据流分析
         compute_reaching_definitions(blocks);
@@ -1404,31 +1422,39 @@ void TACOptimizer::optimize()
             global_changed = true;
             std::clog << "  - Global constant propagation applied" << std::endl;
         }
+        block_builder.print_basic_blocks(std::clog);
         
         // 再次进行局部常量折叠（处理新产生的常量）
         for (auto& block : blocks)
         {
-            if (local_constant_folding(block->start))
+            if (local_constant_folding(block->start,block->end))
             {
                 global_changed = true;
             }
         }
+        block_builder.print_basic_blocks(std::clog);
         
+        //TODO: fix: 可能造成循环体内，经过替换的变量被错误消除；arr-while.m中染色j=@t5,但是j新的赋值没有应用到@t5内。
         if (global_dead_code_elimination(blocks))
         {
             global_changed = true;
             std::clog << "  - Dead code elimination applied" << std::endl;
+
+            block_builder.build();
+            blocks = block_builder.get_basic_blocks();
+            std::clog << "  - Rebuilt CFG global_dead_code_elimination" << std::endl;
         }
+        block_builder.print_basic_blocks(std::clog);
         
         // 6. 控制流简化
         if (simplify_control_flow(tac_first))
         {
             global_changed = true;
             std::clog << "  - Control flow simplification applied" << std::endl;
-            
-            // 重新构建CFG（因为控制流改变了）
+
             block_builder.build();
             blocks = block_builder.get_basic_blocks();
+            std::clog << "  - Rebuilt CFG after control flow simplification" << std::endl;
         }
         
         // 7. 不可达代码消除
@@ -1436,7 +1462,13 @@ void TACOptimizer::optimize()
         {
             global_changed = true;
             std::clog << "  - Unreachable code elimination applied" << std::endl;
+
+            block_builder.build();
+            blocks = block_builder.get_basic_blocks();
+            std::clog << "  - Rebuilt CFG after eliminate_unreachable_code" << std::endl;
         }
+
+        block_builder.print_basic_blocks(std::clog);
     }
     
     // 最后一轮清理：删除未使用的变量声明

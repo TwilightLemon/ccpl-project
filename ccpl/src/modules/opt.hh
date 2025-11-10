@@ -52,8 +52,8 @@ namespace twlm::ccpl::modules
         void compute_constant_propagation(const std::vector<std::shared_ptr<BasicBlock>>& blocks);
         
         // 局部优化（基本块内）
-        bool local_constant_folding(std::shared_ptr<TAC> tac);
-        bool local_copy_propagation(std::shared_ptr<TAC> tac);
+        bool local_constant_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end);
+        bool local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end);
         void optimize_block_local(std::shared_ptr<BasicBlock> block);
         
         // 全局优化（基于数据流分析）
