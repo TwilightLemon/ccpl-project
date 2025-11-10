@@ -1035,227 +1035,233 @@ bool TACOptimizer::common_subexpression_elimination(std::shared_ptr<BasicBlock> 
 bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_header)
 {
     bool changed = false;
-    
-    // 找到循环体的所有块
+
     std::unordered_set<std::shared_ptr<BasicBlock>> loop_blocks;
     find_loop_blocks(loop_header, loop_blocks);
-    
+
     if (loop_blocks.size() <= 1)
         return false;
-    
-    // 收集可以外提的指令及其对应的 var 声明
-    std::vector<std::pair<std::shared_ptr<TAC>, std::shared_ptr<TAC>>> invariant_pairs;
-    
-    // 收集所有循环内的定值（用于判断循环不变量）
-    std::unordered_map<std::string, std::unordered_set<std::shared_ptr<TAC>>> loop_defs;
+
+    std::vector<std::shared_ptr<TAC>> loop_instructions;
+    std::unordered_map<std::shared_ptr<TAC>, std::shared_ptr<BasicBlock>> instr_block;
+    std::unordered_map<std::string, std::vector<std::shared_ptr<TAC>>> defs_in_loop;
+    std::unordered_map<std::string, std::shared_ptr<TAC>> var_decl_in_loop;
+
+    auto record_instruction = [&](std::shared_ptr<BasicBlock> block, std::shared_ptr<TAC> tac) {
+        instr_block[tac] = block;
+        loop_instructions.push_back(tac);
+
+        if (tac->op == TAC_OP::VAR && tac->a && tac->a->type == SYM_TYPE::VAR)
+        {
+            var_decl_in_loop[tac->a->name] = tac;
+        }
+
+        auto def = get_def(tac);
+        if (def)
+        {
+            defs_in_loop[def->name].push_back(tac);
+        }
+    };
+
     for (auto& block : loop_blocks)
     {
+        if (!block || block == loop_header || !block->start || !block->end)
+            continue;
+
         auto tac = block->start;
         while (tac)
         {
-            auto def = get_def(tac);
-            if (def)
-            {
-                loop_defs[def->name].insert(tac);
-            }
+            record_instruction(block, tac);
             if (tac == block->end)
                 break;
             tac = tac->next;
         }
     }
-    
-    for (auto& block : loop_blocks)
-    {
-        if (block == loop_header)
-            continue;  // 跳过循环头
-        
-        auto tac = block->start;
-        while (tac)
+
+    if (loop_instructions.empty())
+        return false;
+
+    auto is_supported_op = [](TAC_OP op) {
+        switch (op)
         {
-            if (is_loop_invariant(tac, loop_header, loop_blocks))
-            {
-                auto def = get_def(tac);
-                if (def)
-                {
-                    // 检查该变量在循环内是否只有这一次定值
-                    // 如果有多次定值，说明它在循环中会变化，不应外提
-                    auto it = loop_defs.find(def->name);
-                    if (it != loop_defs.end() && it->second.size() > 1)
-                    {
-                        // 有多次定值，不外提
-                        if (tac == block->end)
-                            break;
-                        tac = tac->next;
-                        continue;
-                    }
-                    
-                    // 查找该变量的 var 声明
-                    std::shared_ptr<TAC> var_decl = nullptr;
-                    
-                    // 向前查找 var 声明（通常就在前面）
-                    auto search = tac->prev;
-                    while (search)
-                    {
-                        if (search->op == TAC_OP::VAR && 
-                            search->a && search->a->name == def->name)
-                        {
-                            var_decl = search;
-                            break;
-                        }
-                        // 不要搜索太远，最多向前看10条指令
-                        auto check = search;
-                        int count = 0;
-                        while (check != tac && count < 10)
-                        {
-                            count++;
-                            if (check->next == tac)
-                                break;
-                            check = check->next;
-                        }
-                        if (count >= 10)
-                            break;
-                        
-                        search = search->prev;
-                    }
-                    
-                    invariant_pairs.push_back({tac, var_decl});
-                }
-            }
-            
-            if (tac == block->end)
-                break;
-            tac = tac->next;
+        case TAC_OP::ADD:
+        case TAC_OP::SUB:
+        case TAC_OP::MUL:
+        case TAC_OP::DIV:
+        case TAC_OP::LT:
+        case TAC_OP::LE:
+        case TAC_OP::GT:
+        case TAC_OP::GE:
+        case TAC_OP::EQ:
+        case TAC_OP::NE:
+        case TAC_OP::COPY:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    auto operand_ready = [&](const std::shared_ptr<SYM>& sym,
+                             const std::unordered_set<std::shared_ptr<TAC>>& movable) -> bool {
+        if (!sym)
+            return true;
+
+        if (sym->type == SYM_TYPE::CONST_INT || sym->type == SYM_TYPE::CONST_CHAR)
+            return true;
+
+        if (sym->type != SYM_TYPE::VAR)
+            return false;
+
+        auto it = defs_in_loop.find(sym->name);
+        if (it == defs_in_loop.end())
+            return true; // 定义在循环外
+
+        for (auto& defining_instr : it->second)
+        {
+            if (movable.find(defining_instr) == movable.end())
+                return false;
+        }
+
+        return true;
+    };
+
+    std::unordered_set<std::shared_ptr<TAC>> movable;
+    bool progress = true;
+    while (progress)
+    {
+        progress = false;
+
+        for (auto& instr : loop_instructions)
+        {
+            if (movable.find(instr) != movable.end())
+                continue;
+
+            if (!is_supported_op(instr->op))
+                continue;
+
+            auto def = get_def(instr);
+            if (!def)
+                continue;
+
+            auto def_it = defs_in_loop.find(def->name);
+            if (def_it == defs_in_loop.end())
+                continue;
+
+            if (def_it->second.size() != 1)
+                continue; // 在循环中有多次定值，不能外提
+
+            if (!operand_ready(instr->b, movable))
+                continue;
+
+            if (!operand_ready(instr->c, movable))
+                continue;
+
+            movable.insert(instr);
+            progress = true;
         }
     }
-    
-    // 外提指令到循环头之前
-    if (!invariant_pairs.empty())
+
+    if (movable.empty())
+        return false;
+
+    std::shared_ptr<BasicBlock> preheader = nullptr;
+    for (auto& pred : loop_header->predecessors)
     {
-        std::clog << "    Loop invariant code motion: found " 
-                  << invariant_pairs.size() << " invariant instructions" << std::endl;
-        
-        // 找到循环头的前驱（非循环内的块）
-        std::shared_ptr<BasicBlock> preheader = nullptr;
-        for (auto& pred : loop_header->predecessors)
+        if (loop_blocks.find(pred) == loop_blocks.end())
         {
-            if (loop_blocks.find(pred) == loop_blocks.end())
-            {
-                preheader = pred;
-                break;
-            }
+            preheader = pred;
+            break;
         }
-        
-        if (preheader)
+    }
+
+    if (!preheader || !preheader->end)
+        return false;
+
+    std::vector<std::shared_ptr<TAC>> ordered_to_move;
+    ordered_to_move.reserve(movable.size());
+    for (auto& instr : loop_instructions)
+    {
+        if (movable.find(instr) != movable.end())
+            ordered_to_move.push_back(instr);
+    }
+
+    std::unordered_set<std::string> moved_var_decls;
+
+    auto remove_from_block = [&](std::shared_ptr<TAC> node) {
+        if (!node)
+            return;
+
+        auto block_it = instr_block.find(node);
+        if (block_it == instr_block.end())
+            return;
+
+        auto block = block_it->second;
+        if (!block)
+            return;
+
+        if (node == block->start)
+            block->start = node->next;
+        if (node == block->end)
+            block->end = node->prev;
+
+        if (node->prev)
+            node->prev->next = node->next;
+        if (node->next)
+            node->next->prev = node->prev;
+
+        node->prev = nullptr;
+        node->next = nullptr;
+
+        if (!block->start)
+            block->start = block->end;
+    };
+
+    auto insert_before = [&](std::shared_ptr<TAC> node, std::shared_ptr<TAC> position) {
+        if (!node || !position)
+            return;
+
+        node->prev = position->prev;
+        node->next = position;
+
+        if (position->prev)
+            position->prev->next = node;
+        position->prev = node;
+
+        if (preheader->start == position)
+            preheader->start = node;
+
+        instr_block[node] = preheader;
+    };
+
+    auto insertion_point = preheader->end;
+
+    for (auto& instr : ordered_to_move)
+    {
+        auto def = get_def(instr);
+        if (def)
         {
-            // 将不变指令和其 var 声明移动到preheader的末尾
-            for (auto& [inv_tac, var_decl] : invariant_pairs)
+            auto decl_it = var_decl_in_loop.find(def->name);
+            if (decl_it != var_decl_in_loop.end() &&
+                moved_var_decls.insert(def->name).second)
             {
-                // 找到包含这些指令的源块
-                std::shared_ptr<BasicBlock> source_block = nullptr;
-                for (auto& block : loop_blocks)
-                {
-                    auto check = block->start;
-                    while (check)
-                    {
-                        if (check == inv_tac || check == var_decl)
-                        {
-                            source_block = block;
-                            break;
-                        }
-                        if (check == block->end)
-                            break;
-                        check = check->next;
-                    }
-                    if (source_block)
-                        break;
-                }
-                
-                // 先移除 var 声明（如果存在）
-                if (var_decl)
-                {
-                    // 更新源块的 start/end 指针
-                    if (source_block)
-                    {
-                        if (var_decl == source_block->start)
-                        {
-                            source_block->start = var_decl->next;
-                        }
-                        if (var_decl == source_block->end)
-                        {
-                            source_block->end = var_decl->prev;
-                        }
-                    }
-                    
-                    // 保存指针后断开链接
-                    auto var_prev = var_decl->prev;
-                    auto var_next = var_decl->next;
-                    
-                    if (var_prev)
-                        var_prev->next = var_next;
-                    if (var_next)
-                        var_next->prev = var_prev;
-                    
-                    // 清空被移除指令的链接（防止悬空指针）
-                    var_decl->prev = nullptr;
-                    var_decl->next = nullptr;
-                }
-                
-                // 移除计算指令
-                if (source_block)
-                {
-                    if (inv_tac == source_block->start)
-                    {
-                        source_block->start = inv_tac->next;
-                    }
-                    if (inv_tac == source_block->end)
-                    {
-                        source_block->end = inv_tac->prev;
-                    }
-                }
-                
-                // 保存指针后断开链接
-                auto inv_prev = inv_tac->prev;
-                auto inv_next = inv_tac->next;
-                
-                if (inv_prev)
-                    inv_prev->next = inv_next;
-                if (inv_next)
-                    inv_next->prev = inv_prev;
-                
-                // 清空被移除指令的链接（防止悬空指针）
-                inv_tac->prev = nullptr;
-                inv_tac->next = nullptr;
-                
-                // 插入到preheader末尾之前
-                auto insert_pos = preheader->end;
-                
-                // 先插入 var 声明
-                if (var_decl)
-                {
-                    var_decl->prev = insert_pos->prev;
-                    var_decl->next = insert_pos;
-                    
-                    if (insert_pos->prev)
-                        insert_pos->prev->next = var_decl;
-                    insert_pos->prev = var_decl;
-                    
-                    // 更新插入位置为 var_decl
-                    insert_pos = var_decl->next;
-                }
-                
-                // 然后插入计算指令
-                inv_tac->prev = insert_pos->prev;
-                inv_tac->next = insert_pos;
-                
-                if (insert_pos->prev)
-                    insert_pos->prev->next = inv_tac;
-                insert_pos->prev = inv_tac;
-                
+                auto decl = decl_it->second;
+                remove_from_block(decl);
+                insert_before(decl, insertion_point);
                 changed = true;
             }
         }
+
+        remove_from_block(instr);
+        insert_before(instr, insertion_point);
+        changed = true;
     }
-    
+
+    if (changed)
+    {
+        std::clog << "    Loop invariant code motion: found "
+                  << ordered_to_move.size() << " invariant instructions" << std::endl;
+    }
+
     return changed;
 }
 
