@@ -70,7 +70,8 @@ namespace twlm::ccpl::modules
         void asm_load(int r, std::shared_ptr<SYM> s);
         int reg_alloc(std::shared_ptr<SYM> s);
         
-        void asm_bin(const std::string& op, std::shared_ptr<SYM> a, 
+        //return: reg_b
+        int asm_bin(const std::string& op, std::shared_ptr<SYM> a, 
                      std::shared_ptr<SYM> b, std::shared_ptr<SYM> c);
         void asm_cmp(TAC_OP op, std::shared_ptr<SYM> a, 
                      std::shared_ptr<SYM> b, std::shared_ptr<SYM> c);
