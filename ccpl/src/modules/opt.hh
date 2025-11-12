@@ -69,8 +69,6 @@ namespace twlm::ccpl::modules
         
         // 辅助函数
         bool is_loop_header(std::shared_ptr<BasicBlock> block) const;
-        bool is_loop_invariant(std::shared_ptr<TAC> tac, std::shared_ptr<BasicBlock> loop_header,
-                               const std::unordered_set<std::shared_ptr<BasicBlock>>& loop_blocks) const;
         void find_loop_blocks(std::shared_ptr<BasicBlock> header,
                              std::unordered_set<std::shared_ptr<BasicBlock>>& loop_blocks) const;
         std::string get_expression_key(std::shared_ptr<TAC> tac) const;

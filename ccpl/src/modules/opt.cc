@@ -260,7 +260,6 @@ void TACOptimizer::compute_constant_propagation(const std::vector<std::shared_pt
         block_out[block].constants.clear();
     }
     
-    // 使用工作列表算法
     std::queue<std::shared_ptr<BasicBlock>> worklist;
     std::unordered_set<std::shared_ptr<BasicBlock>> in_worklist;
     
@@ -820,7 +819,7 @@ bool TACOptimizer::global_dead_code_elimination(const std::vector<std::shared_pt
 bool TACOptimizer::is_loop_header(std::shared_ptr<BasicBlock> block) const
 {
     // 循环头的特征：有前驱在它之后（回边）
-    for (auto& pred : block->predecessors)
+    for (const auto& pred : block->predecessors)
     {
         if (pred->id >= block->id)  // 简单判断：后继块指向前面的块
         {
@@ -840,7 +839,7 @@ void TACOptimizer::find_loop_blocks(std::shared_ptr<BasicBlock> header,
     // 使用工作列表算法，从回边的源节点开始反向遍历
     std::queue<std::shared_ptr<BasicBlock>> worklist;
     
-    for (auto& pred : header->predecessors)
+    for (const auto& pred : header->predecessors)
     {
         if (pred->id >= header->id)  // 回边
         {
@@ -854,7 +853,7 @@ void TACOptimizer::find_loop_blocks(std::shared_ptr<BasicBlock> header,
         auto block = worklist.front();
         worklist.pop();
         
-        for (auto& pred : block->predecessors)
+        for (const auto& pred : block->predecessors)
         {
             if (loop_blocks.find(pred) == loop_blocks.end())
             {
@@ -910,69 +909,6 @@ std::string TACOptimizer::get_expression_key(std::shared_ptr<TAC> tac) const
     return key;
 }
 
-// 判断指令是否是循环不变的
-bool TACOptimizer::is_loop_invariant(std::shared_ptr<TAC> tac, std::shared_ptr<BasicBlock> loop_header,
-                                     const std::unordered_set<std::shared_ptr<BasicBlock>>& loop_blocks) const
-{
-    if (!tac)
-        return false;
-    
-    // 考虑算术运算、比较运算和拷贝操作
-    if (tac->op != TAC_OP::ADD && tac->op != TAC_OP::SUB &&
-        tac->op != TAC_OP::MUL && tac->op != TAC_OP::DIV &&
-        tac->op != TAC_OP::LT && tac->op != TAC_OP::LE &&
-        tac->op != TAC_OP::GT && tac->op != TAC_OP::GE &&
-        tac->op != TAC_OP::EQ && tac->op != TAC_OP::NE &&
-        tac->op != TAC_OP::COPY)
-    {
-        return false;
-    }
-    
-    // 检查操作数是否在循环内被修改
-    auto check_operand = [&](std::shared_ptr<SYM> sym) -> bool {
-        if (!sym)
-            return true;
-        
-        // 常量是不变的
-        if (sym->type == SYM_TYPE::CONST_INT || sym->type == SYM_TYPE::CONST_CHAR)
-            return true;
-        
-        // 检查变量是否在循环内被定值
-        if (sym->type == SYM_TYPE::VAR)
-        {
-            // 遍历循环内的所有块，看是否有对该变量的定值
-            for (auto& block : loop_blocks)
-            {
-                auto instr = block->start;
-                while (instr)
-                {
-                    auto def = get_def(instr);
-                    if (def && def->name == sym->name)
-                    {
-                        return false;  // 在循环内被修改
-                    }
-                    
-                    if (instr == block->end)
-                        break;
-                    instr = instr->next;
-                }
-            }
-            return true;  // 不在循环内被修改
-        }
-        
-        return false;
-    };
-    
-    // 对于 COPY 指令（a = b），只需检查右操作数
-    if (tac->op == TAC_OP::COPY)
-    {
-        return check_operand(tac->b);
-    }
-    
-    // 对于二元运算，检查两个操作数
-    return check_operand(tac->b) && check_operand(tac->c);
-}
-
 // 公共子表达式消除（基本块内）
 bool TACOptimizer::common_subexpression_elimination(std::shared_ptr<BasicBlock> block)
 {
@@ -993,7 +929,7 @@ bool TACOptimizer::common_subexpression_elimination(std::shared_ptr<BasicBlock> 
             {
                 // 找到相同的表达式，替换为拷贝
                 tac->op = TAC_OP::COPY;
-                tac->b = it->second;
+                tac->b = it->second;    //it->second 是临时变量的符号
                 tac->c = nullptr;
                 changed = true;
             }
@@ -1017,7 +953,7 @@ bool TACOptimizer::common_subexpression_elimination(std::shared_ptr<BasicBlock> 
                     to_remove.push_back(expr_key);
                 }
             }
-            for (auto& key : to_remove)
+            for (const auto& key : to_remove)
             {
                 expr_map.erase(key);
             }
@@ -1359,7 +1295,7 @@ bool TACOptimizer::eliminate_unreachable_code(std::vector<std::shared_ptr<BasicB
     std::unordered_set<std::shared_ptr<BasicBlock>> reachable;
     std::queue<std::shared_ptr<BasicBlock>> worklist;
     
-    // 从第一个块开始（程序入口）
+    // 从第一个块开始（程序入口，多函数由于不启用优化，可认为block 0为入口）
     worklist.push(blocks[0]);
     reachable.insert(blocks[0]);
     
@@ -1424,7 +1360,7 @@ bool TACOptimizer::eliminate_unreachable_code(std::vector<std::shared_ptr<BasicB
     return changed;
 }
 
-// 消除未使用的变量声明
+// 消除未使用的变量声明（该方法不适用于多函数，因为没有考虑函数作用域和参数传递）
 bool TACOptimizer::eliminate_unused_var_declarations(std::shared_ptr<TAC> tac_start)
 {
     bool changed = false;
@@ -1557,6 +1493,7 @@ void TACOptimizer::optimize()
             }
         }
         
+        //消除未使用的变量声明
         if (global_dead_code_elimination(blocks))
         {
             global_changed = true;
@@ -1564,7 +1501,6 @@ void TACOptimizer::optimize()
 
             block_builder.build();
             blocks = block_builder.get_basic_blocks();
-            std::clog << "  - Rebuilt CFG global_dead_code_elimination" << std::endl;
         }
         
         // 6. 控制流简化
@@ -1572,6 +1508,9 @@ void TACOptimizer::optimize()
         {
             global_changed = true;
             std::clog << "  - Control flow simplification applied" << std::endl;
+
+            block_builder.build();
+            blocks = block_builder.get_basic_blocks();
         }
         
         // 7. 不可达代码消除
@@ -1579,14 +1518,13 @@ void TACOptimizer::optimize()
         {
             global_changed = true;
             std::clog << "  - Unreachable code elimination applied" << std::endl;
-        }
 
-        block_builder.build();
-        blocks = block_builder.get_basic_blocks();
-        //block_builder.print_basic_blocks(std::clog);
+            block_builder.build();
+            blocks = block_builder.get_basic_blocks();
+        }
     }
     
-    // 最后一轮清理：删除未使用的变量声明
+    // 最后一轮清理：删除未使用的变量声明（包括临时变量）
     if (eliminate_unused_var_declarations(tac_first))
     {
         std::clog << "  - Unused variable declarations eliminated" << std::endl;

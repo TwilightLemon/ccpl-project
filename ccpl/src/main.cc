@@ -75,6 +75,19 @@ int main(int argc, char *argv[])
         tac_gen.print_tac(std::clog);
         std::clog << std::endl;
 
+        //multi-function optimization is not supported yet
+        const auto & sym=tac_gen.get_global_symbols();
+        int func_count=0;
+        for(const auto& [name, sym_ptr]:sym){
+            if(sym_ptr->type==SYM_TYPE::FUNC){
+                func_count++;
+            }
+            if(func_count>1){
+                enable_optimization=false;
+                break;
+            }
+        }
+
         if (enable_optimization)
         {
             twlm::ccpl::modules::TACOptimizer opt(tac_gen.get_tac_first());
