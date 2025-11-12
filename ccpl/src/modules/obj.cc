@@ -197,7 +197,16 @@ void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
     int reg_b = reg_alloc(b);
+    
+    // CRITICAL FIX: Mark reg_b as MODIFIED temporarily to prevent reg_alloc(c)
+    // from choosing this register and overwriting the value
+    auto original_state = reg_desc[reg_b].state;
+    reg_desc[reg_b].state = RegState::MODIFIED;
+    
     int reg_c = reg_alloc(c);
+    
+    // Restore original state
+    reg_desc[reg_b].state = original_state;
 
     // If they're the same register (same variable), we need to use a temporary
     if (reg_b == reg_c)
@@ -215,7 +224,16 @@ void ObjGenerator::asm_cmp(TAC_OP op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
     int reg_b = reg_alloc(b);
+    
+    // CRITICAL FIX: Mark reg_b as MODIFIED temporarily to prevent reg_alloc(c)
+    // from choosing this register and overwriting the value
+    auto original_state = reg_desc[reg_b].state;
+    reg_desc[reg_b].state = RegState::MODIFIED;
+    
     int reg_c = reg_alloc(c);
+    
+    // Restore original state
+    reg_desc[reg_b].state = original_state;
 
     // If they're the same register (same variable), we need to use a temporary
     if (reg_b == reg_c)
