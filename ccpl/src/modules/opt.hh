@@ -13,43 +13,14 @@ namespace twlm::ccpl::modules
 {
     using namespace twlm::ccpl::abstraction;
     
-    // 数据流分析结果
-    struct DataFlowInfo
-    {
-        // 到达定值集合：每个变量 -> 可能的定值指令集合
-        std::unordered_map<std::shared_ptr<SYM>, std::unordered_set<std::shared_ptr<TAC>>> reaching_defs;
-        
-        // 活跃变量集合
-        std::unordered_set<std::shared_ptr<SYM>> live_vars;
-        
-        // 常量传播信息：变量 -> 常量值（如果确定是常量）
-        std::unordered_map<std::shared_ptr<SYM>, int> constants;
-    };
-    
     class TACOptimizer
     {
     private:
         std::shared_ptr<TAC> tac_first;
         BlockBuilder block_builder;
         
-        // 数据流分析结果：每个基本块的入口和出口
-        std::unordered_map<std::shared_ptr<BasicBlock>, DataFlowInfo> block_in;
-        std::unordered_map<std::shared_ptr<BasicBlock>, DataFlowInfo> block_out;
-        
         void warning(const std::string& module,const std::string& msg)const;
-        bool get_const_value(std::shared_ptr<SYM> sym, int& value)const;
         std::shared_ptr<SYM> make_const(int value)const;
-        
-        // 获取指令定义的变量
-        std::shared_ptr<SYM> get_def(std::shared_ptr<TAC> tac) const;
-        
-        // 获取指令使用的变量
-        std::vector<std::shared_ptr<SYM>> get_uses(std::shared_ptr<TAC> tac) const;
-        
-        // 数据流分析
-        void compute_reaching_definitions(const std::vector<std::shared_ptr<BasicBlock>>& blocks);
-        void compute_live_variables(const std::vector<std::shared_ptr<BasicBlock>>& blocks);
-        void compute_constant_propagation(const std::vector<std::shared_ptr<BasicBlock>>& blocks);
         
         // 局部优化（基本块内）
         bool local_constant_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end);

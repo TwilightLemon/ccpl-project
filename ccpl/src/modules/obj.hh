@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include "tac.hh"
+#include "block.hh"
 
 namespace twlm::ccpl::modules
 {
@@ -49,6 +50,7 @@ namespace twlm::ccpl::modules
     private:
         std::ostream& output;
         TACGenerator& tac_gen;
+        BlockBuilder block_builder;
 
         // Register management
         std::array<RegDescriptor, R_NUM> reg_desc;

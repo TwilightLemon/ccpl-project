@@ -52,6 +52,17 @@ namespace twlm::ccpl::abstraction
             }
             return size;
         }
+
+        bool get_const_value(int &out_value) const {
+            if (type == SYM_TYPE::CONST_INT && data_type == DATA_TYPE::INT) {
+                out_value = std::get<int>(value);
+                return true;
+            } else if (type == SYM_TYPE::CONST_CHAR && data_type == DATA_TYPE::CHAR) {
+                out_value = static_cast<int>(std::get<char>(value));
+                return true;
+            }
+            return false;
+        }
         
         std::string to_string() const
         {
@@ -97,6 +108,60 @@ namespace twlm::ccpl::abstraction
         std::shared_ptr<TAC> prev, next;
 
         TAC(TAC_OP op = TAC_OP::UNDEF) : op(op), prev(nullptr), next(nullptr) {}
+
+        std::shared_ptr<SYM> get_def() const{
+            switch (op)
+            {
+            case TAC_OP::ADD:
+            case TAC_OP::SUB:
+            case TAC_OP::MUL:
+            case TAC_OP::DIV:
+            case TAC_OP::EQ:
+            case TAC_OP::NE:
+            case TAC_OP::LT:
+            case TAC_OP::LE:
+            case TAC_OP::GT:
+            case TAC_OP::GE:
+            case TAC_OP::NEG:
+            case TAC_OP::COPY:
+            case TAC_OP::LOAD_PTR:
+            case TAC_OP::ADDR:
+            case TAC_OP::INPUT:
+            case TAC_OP::CALL:
+                return a;
+            default:
+                return nullptr;
+            }
+        }
+
+        std::vector<std::shared_ptr<SYM>> get_uses() const{
+            std::vector<std::shared_ptr<SYM>> uses;
+
+            // b 操作数
+            if (b && b->type == SYM_TYPE::VAR)
+            {
+                uses.push_back(b);
+            }
+
+            // c 操作数
+            if (c && c->type == SYM_TYPE::VAR)
+            {
+                uses.push_back(c);
+            }
+
+            // 特殊指令中的 a 操作数也是使用
+            if (op == TAC_OP::RETURN || op == TAC_OP::OUTPUT ||
+                op == TAC_OP::IFZ || op == TAC_OP::ACTUAL ||
+                op == TAC_OP::STORE_PTR)
+            {
+                if (a && a->type == SYM_TYPE::VAR)
+                {
+                    uses.push_back(a);
+                }
+            }
+
+            return uses;
+        }
 
         std::string to_string() const
         {

@@ -11,13 +11,16 @@ using namespace twlm::ccpl::modules;
 using namespace twlm::ccpl::abstraction;
 
 ObjGenerator::ObjGenerator(std::ostream& out, TACGenerator& tac_generator)
-    : output(out), tac_gen(tac_generator), tos(0), tof(0), oof(0), oon(0)
+    : output(out), tac_gen(tac_generator), tos(0), tof(0), oof(0), oon(0),block_builder(tac_generator.get_tac_first())
 {
     // Initialize register descriptors
     for (int i = 0; i < R_NUM; i++)
     {
         rdesc_clear(i);
     }
+    // Build basic blocks and dataflow analysis
+    block_builder.build();
+    block_builder.compute_data_flow();
 }
 
 void ObjGenerator::rdesc_clear(int r)
