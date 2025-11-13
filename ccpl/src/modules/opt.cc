@@ -26,7 +26,7 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_p
     bool changed = false;
     auto current = tac;
 
-    while (current != end->next)
+    while (current != nullptr)
     {
         // 二元运算
         if (current->op == TAC_OP::ADD || current->op == TAC_OP::SUB ||
@@ -128,7 +128,8 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_p
                 changed = true;
             }
         }
-
+        if(current==end)
+            break;
         current = current->next;
     }
 
@@ -142,7 +143,7 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
     std::unordered_map<std::shared_ptr<SYM>, std::shared_ptr<SYM>> copy_map;
 
     auto current = tac;
-    while (current != end->next)
+    while (current != nullptr)
     {
         // 处理简单的拷贝赋值 a = b（b不是常量）
         if (current->op == TAC_OP::COPY && current->a && current->b &&
@@ -181,6 +182,8 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
             }
         }
 
+        if(current==end)
+            break;
         current = current->next;
     }
 
@@ -724,19 +727,19 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             block->start = block->end;
     };
 
-    auto insert_before = [&](std::shared_ptr<TAC> node, std::shared_ptr<TAC> position) {
+    auto insert_after = [&](std::shared_ptr<TAC> node, std::shared_ptr<TAC> position) {
         if (!node || !position)
             return;
 
-        node->prev = position->prev;
-        node->next = position;
+        node->prev = position;
+        node->next = position->next;
 
-        if (position->prev)
-            position->prev->next = node;
-        position->prev = node;
+        if (position->next)
+            position->next->prev = node;
+        position->next = node;
 
-        if (preheader->start == position)
-            preheader->start = node;
+        if (preheader->end == position)
+            preheader->end = node;
 
         instr_block[node] = preheader;
     };
@@ -754,13 +757,15 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             {
                 auto decl = decl_it->second;
                 remove_from_block(decl);
-                insert_before(decl, insertion_point);
+                insert_after(decl, insertion_point);
+                insertion_point = decl;  // Update insertion point to maintain order
                 changed = true;
             }
         }
 
         remove_from_block(instr);
-        insert_before(instr, insertion_point);
+        insert_after(instr, insertion_point);
+        insertion_point = instr;  // Update insertion point to maintain order
         changed = true;
     }
 
@@ -1014,8 +1019,14 @@ void TACOptimizer::optimize()
         global_iter++;
         
         std::clog << "\n=== Optimization Pass " << global_iter << " ===" << std::endl;
+
+        //局部优化（基本块内）
+        for (auto& block : blocks)
+        {
+            optimize_block_local(block);
+        }
         
-        // 1. 公共子表达式消除（每个基本块内）
+        // 公共子表达式消除（每个基本块内）
         for (auto& block : blocks)
         {
             if (common_subexpression_elimination(block))
@@ -1025,7 +1036,7 @@ void TACOptimizer::optimize()
             }
         }
         
-        // 2. 循环不变量外提
+        // 循环不变量外提
         for (auto& block : blocks)
         {
             if (is_loop_header(block))
@@ -1037,17 +1048,11 @@ void TACOptimizer::optimize()
                 }
             }
         }
-
-        // 3. 局部优化（基本块内）
-        for (auto& block : blocks)
-        {
-            optimize_block_local(block);
-        }
         
-        // 4. 数据流分析
+        // 数据流分析
         block_builder.compute_data_flow();
         
-        // 5. 全局优化
+        // 全局优化
         if (global_constant_propagation(blocks))
         {
             global_changed = true;
@@ -1073,7 +1078,7 @@ void TACOptimizer::optimize()
             blocks = block_builder.get_basic_blocks();
         }
         
-        // 6. 控制流简化
+        // 控制流简化
         if (simplify_control_flow(tac_first))
         {
             global_changed = true;
@@ -1083,7 +1088,7 @@ void TACOptimizer::optimize()
             blocks = block_builder.get_basic_blocks();
         }
         
-        // 7. 不可达代码消除
+        // 不可达代码消除
         if (eliminate_unreachable_code(blocks))
         {
             global_changed = true;
