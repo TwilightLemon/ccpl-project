@@ -190,6 +190,151 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
     return changed;
 }
 
+// 局部链式表达式折叠
+bool TACOptimizer::local_chain_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end){
+    // e=a+b+c+d;假设a是变量，b,c,d是常量，TAC链由于a未知，整个链将在运行时计算。但是b+c+d是可以根据加法结合律提前运算的。
+    // 查找形如 t1=a+const1; t2=t1+const2; ... 的链式加法表达式，并将常量部分提前计算
+    bool changed = false;
+    
+    // 记录每个变量的定义：变量 -> (操作类型, 操作数1, 操作数2)
+    struct DefInfo {
+        TAC_OP op;
+        std::shared_ptr<SYM> left;   // 左操作数
+        std::shared_ptr<SYM> right;  // 右操作数
+        std::shared_ptr<TAC> tac;    // 定义该变量的TAC指令
+    };
+    
+    std::unordered_map<std::shared_ptr<SYM>, DefInfo> def_map;
+    
+    auto current = tac;
+    while (current != nullptr)
+    {
+        // 只处理加法和减法（可以应用结合律）
+        if ((current->op == TAC_OP::ADD || current->op == TAC_OP::SUB) && 
+            current->a && current->b && current->c)
+        {
+            // 记录定义信息
+            def_map[current->a] = {current->op, current->b, current->c, current};
+            
+            // 检查是否形成链：t2 = t1 + const 或 t2 = t1 - const
+            // 其中 t1 = var + const 或 t1 = var - const
+            
+            // 情况1: t2 = t1 op2 const2，其中 t1 = var op1 const1
+            if (current->b->type == SYM_TYPE::VAR)
+            {
+                auto it = def_map.find(current->b);
+                if (it != def_map.end())
+                {
+                    const auto& def = it->second;
+                    
+                    // 检查链条：左操作数是变量定义，右操作数是常量
+                    int const1, const2;
+                    bool left_has_const = def.right && def.right->get_const_value(const1);
+                    bool right_is_const = current->c->get_const_value(const2);
+                    
+                    // t1 = var op1 const1; t2 = t1 op2 const2
+                    // 可以转换为: t2 = var op1 (const1 op2' const2)
+                    if (left_has_const && right_is_const && 
+                        def.left && def.left->type == SYM_TYPE::VAR)
+                    {
+                        int combined_const = 0;
+                        TAC_OP new_op = def.op;
+                        
+                        // 计算合并后的常量
+                        if (def.op == TAC_OP::ADD && current->op == TAC_OP::ADD)
+                        {
+                            // var + c1 + c2 = var + (c1+c2)
+                            combined_const = const1 + const2;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::ADD && current->op == TAC_OP::SUB)
+                        {
+                            // var + c1 - c2 = var + (c1-c2)
+                            combined_const = const1 - const2;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::SUB && current->op == TAC_OP::ADD)
+                        {
+                            // var - c1 + c2 = var - (c1-c2) 或 var + (c2-c1)
+                            combined_const = const2 - const1;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::SUB && current->op == TAC_OP::SUB)
+                        {
+                            // var - c1 - c2 = var - (c1+c2)
+                            combined_const = const1 + const2;
+                            new_op = TAC_OP::SUB;
+                        }
+                        
+                        // 如果合并后的常量为负数且操作是ADD，转换为SUB
+                        if (new_op == TAC_OP::ADD && combined_const < 0)
+                        {
+                            new_op = TAC_OP::SUB;
+                            combined_const = -combined_const;
+                        }
+                        else if (new_op == TAC_OP::SUB && combined_const < 0)
+                        {
+                            new_op = TAC_OP::ADD;
+                            combined_const = -combined_const;
+                        }
+                        
+                        // 应用优化：直接使用原始变量和合并后的常量
+                        current->op = new_op;
+                        current->b = def.left;  // 使用链条起始的变量
+                        current->c = make_const(combined_const);
+                        
+                        // 更新定义映射
+                        def_map[current->a] = {new_op, def.left, current->c, current};
+                        
+                        changed = true;
+                    }
+                }
+            }
+            
+            // 情况2: t2 = const2 op2 t1，其中 t1 = const1 op1 var (仅适用于加法交换律)
+            if (current->op == TAC_OP::ADD && current->c->type == SYM_TYPE::VAR)
+            {
+                auto it = def_map.find(current->c);
+                if (it != def_map.end())
+                {
+                    const auto& def = it->second;
+                    
+                    int const1, const2;
+                    bool left_is_const = current->b->get_const_value(const2);
+                    bool def_left_is_const = def.left && def.left->get_const_value(const1);
+                    
+                    // t1 = const1 + var; t2 = const2 + t1
+                    if (def.op == TAC_OP::ADD && left_is_const && def_left_is_const &&
+                        def.right && def.right->type == SYM_TYPE::VAR)
+                    {
+                        // const2 + (const1 + var) = (const1+const2) + var
+                        int combined_const = const1 + const2;
+                        
+                        current->op = TAC_OP::ADD;
+                        current->b = def.right;  // 使用原始变量
+                        current->c = make_const(combined_const);
+                        
+                        def_map[current->a] = {TAC_OP::ADD, def.right, current->c, current};
+                        
+                        changed = true;
+                    }
+                }
+            }
+        }
+        // 如果变量被重新定义，清除其定义信息
+        else if (current->a && current->a->type == SYM_TYPE::VAR)
+        {
+            def_map.erase(current->a);
+        }
+        
+        if (current == end)
+            break;
+        current = current->next;
+    }
+    
+    return changed;
+}
+
 // 局部优化（基本块内）
 void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
 {
@@ -215,6 +360,10 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
             changed = true;
         }
         if (local_copy_propagation(start, end))
+        {
+            changed = true;
+        }
+        if(local_chain_folding(start,end))
         {
             changed = true;
         }
@@ -456,15 +605,15 @@ std::string TACOptimizer::get_expression_key(std::shared_ptr<TAC> tac) const
             std::string c_str = tac->c ? tac->c->to_string() : "";
             if (b_str > c_str)
                 std::swap(b_str, c_str);
-            key = "ADD_MUL:" + b_str + "," + c_str;
+            key = "+*:" + b_str + "," + c_str;
         }
         break;
     case TAC_OP::SUB:
-        key = "SUB:" + (tac->b ? tac->b->to_string() : "") + "," + 
+        key = "-:" + (tac->b ? tac->b->to_string() : "") + "," + 
               (tac->c ? tac->c->to_string() : "");
         break;
     case TAC_OP::DIV:
-        key = "DIV:" + (tac->b ? tac->b->to_string() : "") + "," + 
+        key = "/:" + (tac->b ? tac->b->to_string() : "") + "," + 
               (tac->c ? tac->c->to_string() : "");
         break;
     case TAC_OP::LT:
