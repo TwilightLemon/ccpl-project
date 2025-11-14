@@ -190,6 +190,28 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
     return changed;
 }
 
+// 局部二元交换（利用群交换律）
+bool TACOptimizer::local_binary_swapping(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end){
+    // a= const + b -> a= b + const, make it easier for constant folding and other optimizations
+    bool changed=false;
+    auto current = tac;
+    while (current != nullptr)
+    {
+        if ((current->op == TAC_OP::ADD || current->op == TAC_OP::MUL) &&
+            current->b && current->c &&
+            (current->b->type == SYM_TYPE::CONST_INT && current->c->type == SYM_TYPE::VAR))
+        {
+            // Swap operands
+            std::swap(current->b, current->c);
+            changed = true;
+        }
+        if(current==end)
+            break;
+        current = current->next;
+    }
+    return changed;
+}
+
 // 局部链式表达式折叠
 bool TACOptimizer::local_chain_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end){
     // e=a+b+c+d;假设a是变量，b,c,d是常量，TAC链由于a未知，整个链将在运行时计算。但是b+c+d是可以根据加法结合律提前运算的。
@@ -362,6 +384,9 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
         if (local_copy_propagation(start, end))
         {
             changed = true;
+        }
+        if(local_binary_swapping(start,end)){
+            changed=true;
         }
         if(local_chain_folding(start,end))
         {

@@ -632,29 +632,97 @@ This involves complex address calculation with the `ADDR`, `ADD`, and `STORE_PTR
 
 #### AST to TAC Translation
 
-The `ASTToTACGenerator` class walks the AST and generates TAC instructions. Key methods:
+The `ASTToTACGenerator` class in `ccpl/src/modules/ast_to_tac.cc` performs a recursive traversal of the AST and translates each node into TAC instructions. It relies on the `TACGenerator` class (`ccpl/src/modules/tac.cc`) to manage symbols, labels, and TAC construction.
 
-- `generate_statement()`: Translates statement nodes
-- `generate_expression()`: Translates expression nodes, returns an `EXP` structure containing:
-  - `place`: The symbol holding the result
-  - `code`: TAC instructions to compute the expression
-  - `next`: Linked list for multiple expressions (e.g., function arguments)
+##### Core Translation Methods
 
-**Example flow** for `x = a + b * c`:
-1. Generate TAC for `b * c` → produces `_t1` and code `_t1 = b * c`
-2. Generate TAC for `a + _t1` → produces `_t2` and code `_t2 = a + _t1`
-3. Generate TAC for assignment → produces code `x = _t2`
-4. Join all TAC code sequences into a linked list
+**`generate_declaration()`**  
+Processes top-level declarations (variables, functions, structs):
+- **Variables**: Generates `VAR` instructions and handles initializers (including array initializer lists).
+- **Functions**: Creates function labels, parameters, and body code.
+- **Structs**: Registers struct type metadata in the symbol table.
 
-See `ccpl/src/modules/ast_to_tac.cc` for the complete implementation.
+**`generate_statement()`**  
+Translates statement nodes (blocks, if/while/for/switch, return, break, continue, input/output):
+- Control flow statements produce conditional/unconditional jump instructions.
+- Loop statements establish loop contexts for break/continue resolution.
 
-> More detailed info, like metadata tables and offset calculation for a complex array/struct member access, is to be continued.
+**`generate_expression()`**  
+Translates expression nodes and returns an `EXP` structure containing:
+- `place`: The symbol (temporary variable or constant) holding the result.
+- `code`: A linked list of TAC instructions needed to compute the expression.
+- `next`: Used for chaining multiple expressions (e.g., function arguments).
+
+##### Expression Translation Examples
+
+**Arithmetic expression** `x = a + b * c`:
+1. Generate TAC for `b * c` → `_t1 = b * c`
+2. Generate TAC for `a + _t1` → `_t2 = a + _t1`
+3. Generate TAC for assignment → `x = _t2`
+4. Join all sequences via `join_tac()` into a single linked list.
+
+**Function call** `result = func(a, b + 1)`:
+1. Generate argument list: compute `b + 1` → `_t0 = b + 1`
+2. Emit `ACTUAL` instructions for each argument.
+3. Emit `CALL func` and `COPY _t1 = RET` to capture return value.
+4. Assign to `result`.
+
+**Array access** `arr[i][j]`:
+1. Compute base address of `arr` using `ADDR` operation.
+2. Calculate linear offset: `_t0 = i * stride1 + j * stride2` (using array metadata).
+3. Add offset to base: `_t1 = arr_addr + _t0`.
+4. Dereference: `_t2 = *_t1` via `LOAD_PTR`.
+
+**Struct member access** `s.field` or `ptr->field`:
+1. Retrieve struct type metadata to find field offset.
+2. Compute address: `_t0 = &s + offset` or `_t0 = ptr + offset`.
+3. Dereference if needed: `_t1 = *_t0`.
+
+**Nested composite access** `arr[i].field[j]`:
+- Combines array address calculation, struct field offset, and another array subscript.
+- Example TAC sequence:
+  ```
+  _t0 = &arr + i * struct_size       # Array element address
+  _t1 = _t0 + field_offset           # Field address
+  _t2 = j * element_size             # Inner array offset
+  _t3 = _t1 + _t2                    # Final element address
+  _t4 = *_t3                         # Load value
+  ```
+
+##### Symbol Management and Metadata
+
+**Symbol Table**  
+The `TACGenerator` maintains two symbol tables:
+- `sym_tab_global`: Global variables, function names, and struct types.
+- `sym_tab_local`: Local variables and parameters (cleared on scope exit).
+
+**Metadata Tables**  
+- **Array Metadata** (`ArrayMetadata`): Stores dimensions, strides, element size, and base type.
+- **Struct Metadata** (`StructTypeMetadata`): Stores field names, types, and offsets for each struct type.
+
+These tables enable accurate address calculations for complex nested accesses (e.g., `arr[i].field[j]`).
+
+##### TAC Construction Helpers
+
+- `mk_tmp(type)`: Allocates a fresh temporary variable with sequential naming (`_t0`, `_t1`, ...).
+- `mk_const(value)`: Creates a constant symbol.
+- `mk_tac(op, a, b, c)`: Constructs a single TAC instruction.
+- `join_tac(c1, c2)`: Concatenates two TAC instruction lists.
+- `do_assign(var, exp)`: Generates assignment TAC, handling both direct and pointer-based assignments.
+- `do_bin(op, left, right)`: Generates binary operation TAC.
+- `do_call_ret(func, args)`: Generates function call TAC with argument passing and return value capture.
+- `do_address_of(exp)`: Generates `ADDR` instruction to take address of a variable.
+- `do_dereference(exp)`: Generates `LOAD_PTR` instruction to dereference a pointer.
+- `do_pointer_assign(addr, value)`: Generates `STORE_PTR` instruction for indirect assignment (`*ptr = value`).
+
+
 
 ### 5. Optimization (Optional)
 
 The compiler includes an optional optimization phase implemented in `ccpl/src/modules/opt.cc`. The optimizer performs at the TAC level.
 
-> This part is not completed yet.
+> -o command line option enables optimization.  
+> Once more than one function is declared, the optimizer will be disabled by default.
 
 #### Basic Block Construction
 
@@ -678,42 +746,21 @@ This allows analysis of program structure for optimization.
 
 #### Optimization Techniques
 
-**1. Constant Folding**
-Evaluates constant expressions at compile time:
-```
-Before: @t1 = 2 * 3
-After:  @t1 = 6
-```
+The optimizer divides TAC into basic blocks and iterates until no further transformations apply.  Optimization is split into two groups:
 
-**2. Constant Propagation**
-Replaces variables with their constant values:
-```
-Before: x = 5
-        y = x + 3
-After:  x = 5
-        y = 8
-```
+##### Local Optimization Techniques
+- **Constant Folding**: Evaluates arithmetic and comparison expressions whose operands are immediate constants, collapsing them into single `COPY` instructions within a block.
+- **Copy Propagation**: Tracks simple `a = b` chains and replaces later uses so variables flow directly to their sources, skipping intermediate temporaries inside each block.
+- **Chain Folding**: Merges sequences such as `t1 = a + const1` followed by `t2 = t1 + const2` into a single operation on `a` plus the combined constant, exploiting associativity within the block.
+- **Common Subexpression Elimination (CSE)**: Records expressions via normalized keys and rewrites repeats as copies of previously computed temporaries, invalidating entries when their operands change.
 
-**3. Copy Propagation**
-Eliminates unnecessary copies:
-```
-Before: x = y
-        z = x + 1
-After:  x = y
-        z = y + 1
-```
-
-**4. Dead Code Elimination**
-Removes code that doesn't affect program output:
-```
-Before: x = 5     # x is never used
-        y = 10
-        output y
-After:  y = 10
-        output y
-```
-
-Note: The optimization phase is currently commented out in `main.cc` (lines 41-44) but can be enabled for educational purposes.
+##### Global Optimization Techniques
+- **Global Constant Propagation**: Performs a data-flow analysis across basic blocks so any variable proven constant is replaced before the next pass, which then triggers another round of local folding.
+- **Global Dead Code Elimination**: Uses live-variable analysis to remove instructions whose defined temporaries remain unused, with special handling to avoid side-effect-bearing ops.
+- **Unreachable Code Elimination**: Traverses the CFG from the entry block and drops any blocks that are never reached.
+- **Loop-Invariant Code Motion**: Identifies supported arithmetic expressions in loops whose operands are initialized outside the loop and hoists them to the loop preheader.
+- **Control Flow Simplification**: Simplifies constant conditional jumps (`IFZ`) to unconditional `GOTO` or removes them entirely, and prunes redundant `GOTO` → `LABEL` sequences.
+- **Unused Variable Declaration Removal**: After other optimizations settle, the optimizer scans for `VAR` declarations that no instruction references and deletes them to clean up the final TAC stream.
 
 ### 6. Assembly Code Generation
 
