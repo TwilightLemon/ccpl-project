@@ -16,9 +16,9 @@ int main(){
     char *p=&a1[i].a[j][k];
     *p = 'q';
     output a1[i].a[2][3];
-    *p='R'; #重写p指向内存
+    *p='R';
     output *p;
-    *p = 'w'; #重写p指向内存
+    *p = 'w';
     output a1[i].a[j][k];
     return 0;
 }

@@ -5,6 +5,7 @@
 #include <iostream>
 #include <fstream>
 #include "tac.hh"
+#include "block.hh"
 
 namespace twlm::ccpl::modules
 {
@@ -49,6 +50,7 @@ namespace twlm::ccpl::modules
     private:
         std::ostream& output;
         TACGenerator& tac_gen;
+        BlockBuilder block_builder;
 
         // Register management
         std::array<RegDescriptor, R_NUM> reg_desc;
@@ -70,7 +72,8 @@ namespace twlm::ccpl::modules
         void asm_load(int r, std::shared_ptr<SYM> s);
         int reg_alloc(std::shared_ptr<SYM> s);
         
-        void asm_bin(const std::string& op, std::shared_ptr<SYM> a, 
+        //return: reg_b
+        int asm_bin(const std::string& op, std::shared_ptr<SYM> a, 
                      std::shared_ptr<SYM> b, std::shared_ptr<SYM> c);
         void asm_cmp(TAC_OP op, std::shared_ptr<SYM> a, 
                      std::shared_ptr<SYM> b, std::shared_ptr<SYM> c);

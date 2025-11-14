@@ -11,13 +11,16 @@ using namespace twlm::ccpl::modules;
 using namespace twlm::ccpl::abstraction;
 
 ObjGenerator::ObjGenerator(std::ostream& out, TACGenerator& tac_generator)
-    : output(out), tac_gen(tac_generator), tos(0), tof(0), oof(0), oon(0)
+    : output(out), tac_gen(tac_generator), tos(0), tof(0), oof(0), oon(0),block_builder(tac_generator.get_tac_first())
 {
     // Initialize register descriptors
     for (int i = 0; i < R_NUM; i++)
     {
         rdesc_clear(i);
     }
+    // Build basic blocks and dataflow analysis
+    block_builder.build();
+    block_builder.compute_data_flow();
 }
 
 void ObjGenerator::rdesc_clear(int r)
@@ -193,7 +196,7 @@ int ObjGenerator::reg_alloc(std::shared_ptr<SYM> s)
     return random;
 }
 
-void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
+int ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
     int reg_b = reg_alloc(b);
@@ -202,6 +205,20 @@ void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
     // from choosing this register and overwriting the value
     auto original_state = reg_desc[reg_b].state;
     reg_desc[reg_b].state = RegState::MODIFIED;
+
+    if(c->type ==SYM_TYPE::CONST_INT || c->type == SYM_TYPE::CONST_CHAR){
+        // For immediate values, we can directly use them in the instruction
+        if (c->type == SYM_TYPE::CONST_INT)
+        {
+            output << "\t" << op << " R" << reg_b << "," << std::get<int>(c->value) << "\n";
+        }
+        else if (c->type == SYM_TYPE::CONST_CHAR)
+        {
+            output << "\t" << op << " R" << reg_b << "," << static_cast<int>(std::get<char>(c->value)) << "\n";
+        }
+        rdesc_fill(reg_b, a, RegState::MODIFIED);
+        return reg_b;
+    }
     
     int reg_c = reg_alloc(c);
     
@@ -218,36 +235,16 @@ void ObjGenerator::asm_bin(const std::string& op, std::shared_ptr<SYM> a,
 
     output << "\t" << op << " R" << reg_b << ",R" << reg_c << "\n";
     rdesc_fill(reg_b, a, RegState::MODIFIED);
+
+    return reg_b;
 }
 
 void ObjGenerator::asm_cmp(TAC_OP op, std::shared_ptr<SYM> a,
                            std::shared_ptr<SYM> b, std::shared_ptr<SYM> c)
 {
-    int reg_b = reg_alloc(b);
-    
-    // CRITICAL FIX: Mark reg_b as MODIFIED temporarily to prevent reg_alloc(c)
-    // from choosing this register and overwriting the value
-    auto original_state = reg_desc[reg_b].state;
-    reg_desc[reg_b].state = RegState::MODIFIED;
-    
-    int reg_c = reg_alloc(c);
-    
-    // Restore original state
-    reg_desc[reg_b].state = original_state;
-
-    // If they're the same register (same variable), we need to use a temporary
-    if (reg_b == reg_c)
-    {
-        // Load c into a temporary register
-        output << "\tLOD R" << R_TP << ",R" << reg_c << "\n";
-        reg_c = R_TP;
-    }
-
-    // Subtract and test
-    output << "\tSUB R" << reg_b << ",R" << reg_c << "\n";
+    int reg_b = asm_bin("SUB",a,b,c);
     output << "\tTST R" << reg_b << "\n";
 
-    // Generate conditional code based on comparison operator
     switch (op)
     {
     case TAC_OP::EQ:  // ==

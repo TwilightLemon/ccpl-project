@@ -2,6 +2,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <iomanip>
+#include <queue>
+#include <climits>
 using namespace twlm::ccpl::modules;
 
 bool BlockBuilder::is_leader(std::shared_ptr<TAC> tac, std::shared_ptr<TAC> prev)
@@ -254,4 +256,367 @@ void BlockBuilder::print_basic_blocks(std::ostream &os)
         os << std::endl;
     }
     os << "==================================" << std::endl;
+}
+
+
+// 到达定值分析：计算每个基本块入口和出口的到达定值集合
+void BlockBuilder::compute_reaching_definitions()
+{
+    const auto& blocks=basic_blocks;
+    // 初始化
+    for (auto& block : blocks)
+    {
+        block_in[block].reaching_defs.clear();
+        block_out[block].reaching_defs.clear();
+    }
+    
+    // 收集所有变量的所有定值点
+    std::unordered_map<std::shared_ptr<SYM>, std::unordered_set<std::shared_ptr<TAC>>> all_defs;
+    for (auto& block : blocks)
+    {
+        auto tac = block->start;
+        while (tac)
+        {
+            auto def = tac->get_def();
+            if (def)
+            {
+                all_defs[def].insert(tac);
+            }
+            if (tac == block->end)
+                break;
+            tac = tac->next;
+        }
+    }
+    
+    // 迭代求解不动点
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        
+        for (auto& block : blocks)
+        {
+            // IN[B] = ∪ OUT[P] for all predecessors P
+            std::unordered_map<std::shared_ptr<SYM>, std::unordered_set<std::shared_ptr<TAC>>> new_in;
+            for (auto& pred : block->predecessors)
+            {
+                for (auto& [var, defs] : block_out[pred].reaching_defs)
+                {
+                    new_in[var].insert(defs.begin(), defs.end());
+                }
+            }
+            
+            // 检查 IN 是否改变
+            if (new_in != block_in[block].reaching_defs)
+            {
+                block_in[block].reaching_defs = new_in;
+                changed = true;
+            }
+            
+            // OUT[B] = GEN[B] ∪ (IN[B] - KILL[B])
+            auto new_out = block_in[block].reaching_defs;
+            
+            // 遍历块中的指令，更新 OUT
+            auto tac = block->start;
+            while (tac)
+            {
+                auto def = tac->get_def();
+                if (def)
+                {
+                    // KILL：删除该变量的所有其他定值
+                    new_out[def].clear();
+                    // GEN：添加当前定值
+                    new_out[def].insert(tac);
+                }
+                
+                if (tac == block->end)
+                    break;
+                tac = tac->next;
+            }
+            
+            // 检查 OUT 是否改变
+            if (new_out != block_out[block].reaching_defs)
+            {
+                block_out[block].reaching_defs = new_out;
+                changed = true;
+            }
+        }
+    }
+}
+
+// 活跃变量分析：计算每个基本块入口和出口的活跃变量集合
+void BlockBuilder::compute_live_variables()
+{
+    const auto& blocks=basic_blocks;
+    // 初始化
+    for (auto& block : blocks)
+    {
+        block_in[block].live_vars.clear();
+        block_out[block].live_vars.clear();
+    }
+    
+    // 迭代求解不动点（逆向数据流）
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        
+        // 逆序遍历基本块
+        for (auto it = blocks.rbegin(); it != blocks.rend(); ++it)
+        {
+            auto& block = *it;
+            
+            // OUT[B] = ∪ IN[S] for all successors S
+            std::unordered_set<std::shared_ptr<SYM>> new_out;
+            for (auto& succ : block->successors)
+            {
+                new_out.insert(block_in[succ].live_vars.begin(), 
+                              block_in[succ].live_vars.end());
+            }
+            
+            if (new_out != block_out[block].live_vars)
+            {
+                block_out[block].live_vars = new_out;
+                changed = true;
+            }
+            
+            // IN[B] = USE[B] ∪ (OUT[B] - DEF[B])
+            auto new_in = block_out[block].live_vars;
+            
+            // 逆序遍历块中的指令
+            std::vector<std::shared_ptr<TAC>> instructions;
+            auto tac = block->start;
+            while (tac)
+            {
+                instructions.push_back(tac);
+                if (tac == block->end)
+                    break;
+                tac = tac->next;
+            }
+            
+            for (auto it = instructions.rbegin(); it != instructions.rend(); ++it)
+            {
+                auto& instr = *it;
+                
+                // 移除定值变量
+                auto def = instr->get_def();
+                if (def)
+                {
+                    new_in.erase(def);
+                }
+                
+                // 添加使用的变量
+                auto uses = instr->get_uses();
+                for (auto& use : uses)
+                {
+                    new_in.insert(use);
+                }
+            }
+            
+            if (new_in != block_in[block].live_vars)
+            {
+                block_in[block].live_vars = new_in;
+                changed = true;
+            }
+        }
+    }
+}
+
+// 常量传播分析：确定每个点上哪些变量是常量
+void BlockBuilder::compute_constant_propagation()
+{
+    const auto& blocks=basic_blocks;
+    // 初始化：所有变量都是 TOP（未知）
+    for (auto& block : blocks)
+    {
+        block_in[block].constants.clear();
+        block_out[block].constants.clear();
+    }
+    
+    std::queue<std::shared_ptr<BasicBlock>> worklist;
+    std::unordered_set<std::shared_ptr<BasicBlock>> in_worklist;
+    
+    for (auto& block : blocks)
+    {
+        worklist.push(block);
+        in_worklist.insert(block);
+    }
+    
+    // 特殊值：用 INT_MIN 表示 BOTTOM（非常量）
+    const int BOTTOM = INT_MIN;
+    
+    while (!worklist.empty())
+    {
+        auto block = worklist.front();
+        worklist.pop();
+        in_worklist.erase(block);
+        
+        // IN[B] = meet of OUT[P] for all predecessors P
+        std::unordered_map<std::shared_ptr<SYM>, int> new_in;
+        
+        bool first = true;
+        for (auto& pred : block->predecessors)
+        {
+            if (first)
+            {
+                new_in = block_out[pred].constants;
+                first = false;
+            }
+            else
+            {
+                // Meet 操作：如果所有前驱的值相同则保持，否则为 BOTTOM
+                std::unordered_set<std::shared_ptr<SYM>> all_vars;
+                for (auto& [var, _] : new_in)
+                    all_vars.insert(var);
+                for (auto& [var, _] : block_out[pred].constants)
+                    all_vars.insert(var);
+                
+                for (auto& var : all_vars)
+                {
+                    bool in_new = new_in.find(var) != new_in.end();
+                    bool in_pred = block_out[pred].constants.find(var) != block_out[pred].constants.end();
+                    
+                    if (in_new && in_pred)
+                    {
+                        if (new_in[var] != block_out[pred].constants[var])
+                        {
+                            new_in[var] = BOTTOM; // 不同的常量值
+                        }
+                    }
+                    else if (in_pred)
+                    {
+                        new_in[var] = block_out[pred].constants[var];
+                    }
+                    // 如果只在 new_in 中，保持不变
+                }
+            }
+        }
+        
+        block_in[block].constants = new_in;
+        
+        // OUT[B] = transfer(IN[B])
+        auto new_out = new_in;
+        
+        auto tac = block->start;
+        while (tac)
+        {
+            auto def = tac->get_def();
+            
+            if (def)
+            {
+                // 尝试计算定值的常量值
+                int result = BOTTOM;
+                bool is_const = false;
+                
+                if (tac->op == TAC_OP::COPY)
+                {
+                    int val;
+                    if (tac->b->get_const_value(val))
+                    {
+                        result = val;
+                        is_const = true;
+                    }
+                    else if (tac->b && tac->b->type == SYM_TYPE::VAR)
+                    {
+                        auto it = new_out.find(tac->b);
+                        if (it != new_out.end() && it->second != BOTTOM)
+                        {
+                            result = it->second;
+                            is_const = true;
+                        }
+                    }
+                }
+                else if (tac->op == TAC_OP::ADD || tac->op == TAC_OP::SUB ||
+                         tac->op == TAC_OP::MUL || tac->op == TAC_OP::DIV)
+                {
+                    int val_b, val_c;
+                    bool has_b = false, has_c = false;
+                    
+                    if (tac->b->get_const_value(val_b))
+                    {
+                        has_b = true;
+                    }
+                    else if (tac->b && tac->b->type == SYM_TYPE::VAR)
+                    {
+                        auto it = new_out.find(tac->b);
+                        if (it != new_out.end() && it->second != BOTTOM)
+                        {
+                            val_b = it->second;
+                            has_b = true;
+                        }
+                    }
+                    
+                    if (tac->c->get_const_value(val_c))
+                    {
+                        has_c = true;
+                    }
+                    else if (tac->c && tac->c->type == SYM_TYPE::VAR)
+                    {
+                        auto it = new_out.find(tac->c);
+                        if (it != new_out.end() && it->second != BOTTOM)
+                        {
+                            val_c = it->second;
+                            has_c = true;
+                        }
+                    }
+                    
+                    if (has_b && has_c)
+                    {
+                        switch (tac->op)
+                        {
+                        case TAC_OP::ADD:
+                            result = val_b + val_c;
+                            is_const = true;
+                            break;
+                        case TAC_OP::SUB:
+                            result = val_b - val_c;
+                            is_const = true;
+                            break;
+                        case TAC_OP::MUL:
+                            result = val_b * val_c;
+                            is_const = true;
+                            break;
+                        case TAC_OP::DIV:
+                            if (val_c != 0)
+                            {
+                                result = val_b / val_c;
+                                is_const = true;
+                            }
+                            break;
+                        default:
+                            break;
+                        }
+                    }
+                }
+                
+                if (is_const)
+                {
+                    new_out[def] = result;
+                }
+                else
+                {
+                    new_out[def] = BOTTOM; // 非常量
+                }
+            }
+            
+            if (tac == block->end)
+                break;
+            tac = tac->next;
+        }
+        
+        // 如果 OUT 改变，将后继加入工作列表
+        if (new_out != block_out[block].constants)
+        {
+            block_out[block].constants = new_out;
+            
+            for (auto& succ : block->successors)
+            {
+                if (in_worklist.find(succ) == in_worklist.end())
+                {
+                    worklist.push(succ);
+                    in_worklist.insert(succ);
+                }
+            }
+        }
+    }
 }

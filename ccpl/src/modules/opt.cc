@@ -11,21 +11,6 @@ void TACOptimizer::warning(const std::string &module, const std::string &msg) co
     std::cerr << "AST Opt[" << module << "] Warning: " << msg << std::endl;
 }
 
-bool TACOptimizer::get_const_value(std::shared_ptr<SYM> sym, int &value) const
-{
-    if (!sym)
-        return false;
-    if (sym->type == SYM_TYPE::CONST_INT && sym->data_type == DATA_TYPE::INT)
-    {
-        value = std::get<int>(sym->value);
-        return true;
-    }else if(sym->type == SYM_TYPE::CONST_CHAR && sym->data_type == DATA_TYPE::CHAR){
-        value = std::get<char>(sym->value);
-        return true;
-    }
-    return false;
-}
-
 std::shared_ptr<SYM> TACOptimizer::make_const(int value) const
 {
     auto const_sym = std::make_shared<SYM>();
@@ -35,434 +20,21 @@ std::shared_ptr<SYM> TACOptimizer::make_const(int value) const
     return const_sym;
 }
 
-// 获取指令定义的变量
-std::shared_ptr<SYM> TACOptimizer::get_def(std::shared_ptr<TAC> tac) const
-{
-    if (!tac || !tac->a)
-        return nullptr;
-        
-    // 这些指令会定义变量 a
-    if (tac->op == TAC_OP::COPY || tac->op == TAC_OP::ADD || tac->op == TAC_OP::SUB ||
-        tac->op == TAC_OP::MUL || tac->op == TAC_OP::DIV || tac->op == TAC_OP::NEG ||
-        tac->op == TAC_OP::EQ || tac->op == TAC_OP::NE || tac->op == TAC_OP::LT ||
-        tac->op == TAC_OP::LE || tac->op == TAC_OP::GT || tac->op == TAC_OP::GE ||
-        tac->op == TAC_OP::CALL || tac->op == TAC_OP::INPUT ||
-        tac->op == TAC_OP::ADDR || tac->op == TAC_OP::LOAD_PTR)
-    {
-        if (tac->a->type == SYM_TYPE::VAR)
-            return tac->a;
-    }
-    
-    return nullptr;
-}
-
-// 获取指令使用的变量
-std::vector<std::shared_ptr<SYM>> TACOptimizer::get_uses(std::shared_ptr<TAC> tac) const
-{
-    std::vector<std::shared_ptr<SYM>> uses;
-    if (!tac)
-        return uses;
-    
-    // b 操作数
-    if (tac->b && tac->b->type == SYM_TYPE::VAR)
-    {
-        uses.push_back(tac->b);
-    }
-    
-    // c 操作数
-    if (tac->c && tac->c->type == SYM_TYPE::VAR)
-    {
-        uses.push_back(tac->c);
-    }
-    
-    // 特殊指令中的 a 操作数也是使用
-    if (tac->op == TAC_OP::RETURN || tac->op == TAC_OP::OUTPUT ||
-        tac->op == TAC_OP::IFZ || tac->op == TAC_OP::ACTUAL ||
-        tac->op == TAC_OP::STORE_PTR)
-    {
-        if (tac->a && tac->a->type == SYM_TYPE::VAR)
-        {
-            uses.push_back(tac->a);
-        }
-    }
-    
-    return uses;
-}
-
-// 到达定值分析：计算每个基本块入口和出口的到达定值集合
-void TACOptimizer::compute_reaching_definitions(const std::vector<std::shared_ptr<BasicBlock>>& blocks)
-{
-    // 初始化
-    for (auto& block : blocks)
-    {
-        block_in[block].reaching_defs.clear();
-        block_out[block].reaching_defs.clear();
-    }
-    
-    // 收集所有变量的所有定值点
-    std::unordered_map<std::shared_ptr<SYM>, std::unordered_set<std::shared_ptr<TAC>>> all_defs;
-    for (auto& block : blocks)
-    {
-        auto tac = block->start;
-        while (tac)
-        {
-            auto def = get_def(tac);
-            if (def)
-            {
-                all_defs[def].insert(tac);
-            }
-            if (tac == block->end)
-                break;
-            tac = tac->next;
-        }
-    }
-    
-    // 迭代求解不动点
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        
-        for (auto& block : blocks)
-        {
-            // IN[B] = ∪ OUT[P] for all predecessors P
-            std::unordered_map<std::shared_ptr<SYM>, std::unordered_set<std::shared_ptr<TAC>>> new_in;
-            for (auto& pred : block->predecessors)
-            {
-                for (auto& [var, defs] : block_out[pred].reaching_defs)
-                {
-                    new_in[var].insert(defs.begin(), defs.end());
-                }
-            }
-            
-            // 检查 IN 是否改变
-            if (new_in != block_in[block].reaching_defs)
-            {
-                block_in[block].reaching_defs = new_in;
-                changed = true;
-            }
-            
-            // OUT[B] = GEN[B] ∪ (IN[B] - KILL[B])
-            auto new_out = block_in[block].reaching_defs;
-            
-            // 遍历块中的指令，更新 OUT
-            auto tac = block->start;
-            while (tac)
-            {
-                auto def = get_def(tac);
-                if (def)
-                {
-                    // KILL：删除该变量的所有其他定值
-                    new_out[def].clear();
-                    // GEN：添加当前定值
-                    new_out[def].insert(tac);
-                }
-                
-                if (tac == block->end)
-                    break;
-                tac = tac->next;
-            }
-            
-            // 检查 OUT 是否改变
-            if (new_out != block_out[block].reaching_defs)
-            {
-                block_out[block].reaching_defs = new_out;
-                changed = true;
-            }
-        }
-    }
-}
-
-// 活跃变量分析：计算每个基本块入口和出口的活跃变量集合
-void TACOptimizer::compute_live_variables(const std::vector<std::shared_ptr<BasicBlock>>& blocks)
-{
-    // 初始化
-    for (auto& block : blocks)
-    {
-        block_in[block].live_vars.clear();
-        block_out[block].live_vars.clear();
-    }
-    
-    // 迭代求解不动点（逆向数据流）
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        
-        // 逆序遍历基本块
-        for (auto it = blocks.rbegin(); it != blocks.rend(); ++it)
-        {
-            auto& block = *it;
-            
-            // OUT[B] = ∪ IN[S] for all successors S
-            std::unordered_set<std::shared_ptr<SYM>> new_out;
-            for (auto& succ : block->successors)
-            {
-                new_out.insert(block_in[succ].live_vars.begin(), 
-                              block_in[succ].live_vars.end());
-            }
-            
-            if (new_out != block_out[block].live_vars)
-            {
-                block_out[block].live_vars = new_out;
-                changed = true;
-            }
-            
-            // IN[B] = USE[B] ∪ (OUT[B] - DEF[B])
-            auto new_in = block_out[block].live_vars;
-            
-            // 逆序遍历块中的指令
-            std::vector<std::shared_ptr<TAC>> instructions;
-            auto tac = block->start;
-            while (tac)
-            {
-                instructions.push_back(tac);
-                if (tac == block->end)
-                    break;
-                tac = tac->next;
-            }
-            
-            for (auto it = instructions.rbegin(); it != instructions.rend(); ++it)
-            {
-                auto& instr = *it;
-                
-                // 移除定值变量
-                auto def = get_def(instr);
-                if (def)
-                {
-                    new_in.erase(def);
-                }
-                
-                // 添加使用的变量
-                auto uses = get_uses(instr);
-                for (auto& use : uses)
-                {
-                    new_in.insert(use);
-                }
-            }
-            
-            if (new_in != block_in[block].live_vars)
-            {
-                block_in[block].live_vars = new_in;
-                changed = true;
-            }
-        }
-    }
-}
-
-// 常量传播分析：确定每个点上哪些变量是常量
-void TACOptimizer::compute_constant_propagation(const std::vector<std::shared_ptr<BasicBlock>>& blocks)
-{
-    // 初始化：所有变量都是 TOP（未知）
-    for (auto& block : blocks)
-    {
-        block_in[block].constants.clear();
-        block_out[block].constants.clear();
-    }
-    
-    std::queue<std::shared_ptr<BasicBlock>> worklist;
-    std::unordered_set<std::shared_ptr<BasicBlock>> in_worklist;
-    
-    for (auto& block : blocks)
-    {
-        worklist.push(block);
-        in_worklist.insert(block);
-    }
-    
-    // 特殊值：用 INT_MIN 表示 BOTTOM（非常量）
-    const int BOTTOM = INT_MIN;
-    
-    while (!worklist.empty())
-    {
-        auto block = worklist.front();
-        worklist.pop();
-        in_worklist.erase(block);
-        
-        // IN[B] = meet of OUT[P] for all predecessors P
-        std::unordered_map<std::shared_ptr<SYM>, int> new_in;
-        
-        bool first = true;
-        for (auto& pred : block->predecessors)
-        {
-            if (first)
-            {
-                new_in = block_out[pred].constants;
-                first = false;
-            }
-            else
-            {
-                // Meet 操作：如果所有前驱的值相同则保持，否则为 BOTTOM
-                std::unordered_set<std::shared_ptr<SYM>> all_vars;
-                for (auto& [var, _] : new_in)
-                    all_vars.insert(var);
-                for (auto& [var, _] : block_out[pred].constants)
-                    all_vars.insert(var);
-                
-                for (auto& var : all_vars)
-                {
-                    bool in_new = new_in.find(var) != new_in.end();
-                    bool in_pred = block_out[pred].constants.find(var) != block_out[pred].constants.end();
-                    
-                    if (in_new && in_pred)
-                    {
-                        if (new_in[var] != block_out[pred].constants[var])
-                        {
-                            new_in[var] = BOTTOM; // 不同的常量值
-                        }
-                    }
-                    else if (in_pred)
-                    {
-                        new_in[var] = block_out[pred].constants[var];
-                    }
-                    // 如果只在 new_in 中，保持不变
-                }
-            }
-        }
-        
-        block_in[block].constants = new_in;
-        
-        // OUT[B] = transfer(IN[B])
-        auto new_out = new_in;
-        
-        auto tac = block->start;
-        while (tac)
-        {
-            auto def = get_def(tac);
-            
-            if (def)
-            {
-                // 尝试计算定值的常量值
-                int result = BOTTOM;
-                bool is_const = false;
-                
-                if (tac->op == TAC_OP::COPY)
-                {
-                    int val;
-                    if (get_const_value(tac->b, val))
-                    {
-                        result = val;
-                        is_const = true;
-                    }
-                    else if (tac->b && tac->b->type == SYM_TYPE::VAR)
-                    {
-                        auto it = new_out.find(tac->b);
-                        if (it != new_out.end() && it->second != BOTTOM)
-                        {
-                            result = it->second;
-                            is_const = true;
-                        }
-                    }
-                }
-                else if (tac->op == TAC_OP::ADD || tac->op == TAC_OP::SUB ||
-                         tac->op == TAC_OP::MUL || tac->op == TAC_OP::DIV)
-                {
-                    int val_b, val_c;
-                    bool has_b = false, has_c = false;
-                    
-                    if (get_const_value(tac->b, val_b))
-                    {
-                        has_b = true;
-                    }
-                    else if (tac->b && tac->b->type == SYM_TYPE::VAR)
-                    {
-                        auto it = new_out.find(tac->b);
-                        if (it != new_out.end() && it->second != BOTTOM)
-                        {
-                            val_b = it->second;
-                            has_b = true;
-                        }
-                    }
-                    
-                    if (get_const_value(tac->c, val_c))
-                    {
-                        has_c = true;
-                    }
-                    else if (tac->c && tac->c->type == SYM_TYPE::VAR)
-                    {
-                        auto it = new_out.find(tac->c);
-                        if (it != new_out.end() && it->second != BOTTOM)
-                        {
-                            val_c = it->second;
-                            has_c = true;
-                        }
-                    }
-                    
-                    if (has_b && has_c)
-                    {
-                        switch (tac->op)
-                        {
-                        case TAC_OP::ADD:
-                            result = val_b + val_c;
-                            is_const = true;
-                            break;
-                        case TAC_OP::SUB:
-                            result = val_b - val_c;
-                            is_const = true;
-                            break;
-                        case TAC_OP::MUL:
-                            result = val_b * val_c;
-                            is_const = true;
-                            break;
-                        case TAC_OP::DIV:
-                            if (val_c != 0)
-                            {
-                                result = val_b / val_c;
-                                is_const = true;
-                            }
-                            break;
-                        default:
-                            break;
-                        }
-                    }
-                }
-                
-                if (is_const)
-                {
-                    new_out[def] = result;
-                }
-                else
-                {
-                    new_out[def] = BOTTOM; // 非常量
-                }
-            }
-            
-            if (tac == block->end)
-                break;
-            tac = tac->next;
-        }
-        
-        // 如果 OUT 改变，将后继加入工作列表
-        if (new_out != block_out[block].constants)
-        {
-            block_out[block].constants = new_out;
-            
-            for (auto& succ : block->successors)
-            {
-                if (in_worklist.find(succ) == in_worklist.end())
-                {
-                    worklist.push(succ);
-                    in_worklist.insert(succ);
-                }
-            }
-        }
-    }
-}
-
 // 局部常量折叠（只处理立即数常量）
 bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end)
 {
     bool changed = false;
     auto current = tac;
 
-    while (current != end->next)
+    while (current != nullptr)
     {
         // 二元运算
         if (current->op == TAC_OP::ADD || current->op == TAC_OP::SUB ||
             current->op == TAC_OP::MUL || current->op == TAC_OP::DIV)
         {
             int val_b, val_c;
-            if (get_const_value(current->b, val_b) &&
-                get_const_value(current->c, val_c))
+            if (current->b->get_const_value(val_b) &&
+                current->c->get_const_value(val_c))
             {
                 int result = 0;
                 bool valid = true;
@@ -509,8 +81,8 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_p
                  current->op == TAC_OP::GT || current->op == TAC_OP::GE)
         {
             int val_b, val_c;
-            if (get_const_value(current->b, val_b) &&
-                get_const_value(current->c, val_c))
+            if (current->b->get_const_value(val_b) &&
+                current->c->get_const_value(val_c))
             {
                 int result = 0;
 
@@ -548,7 +120,7 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_p
         else if (current->op == TAC_OP::NEG)
         {
             int val_b;
-            if (get_const_value(current->b, val_b))
+            if (current->b->get_const_value(val_b))
             {
                 current->op = TAC_OP::COPY;
                 current->b = make_const(-val_b);
@@ -556,7 +128,8 @@ bool TACOptimizer::local_constant_folding(std::shared_ptr<TAC> tac,std::shared_p
                 changed = true;
             }
         }
-
+        if(current==end)
+            break;
         current = current->next;
     }
 
@@ -570,7 +143,7 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
     std::unordered_map<std::shared_ptr<SYM>, std::shared_ptr<SYM>> copy_map;
 
     auto current = tac;
-    while (current != end->next)
+    while (current != nullptr)
     {
         // 处理简单的拷贝赋值 a = b（b不是常量）
         if (current->op == TAC_OP::COPY && current->a && current->b &&
@@ -609,9 +182,156 @@ bool TACOptimizer::local_copy_propagation(std::shared_ptr<TAC> tac,std::shared_p
             }
         }
 
+        if(current==end)
+            break;
         current = current->next;
     }
 
+    return changed;
+}
+
+// 局部链式表达式折叠
+bool TACOptimizer::local_chain_folding(std::shared_ptr<TAC> tac,std::shared_ptr<TAC> end){
+    // e=a+b+c+d;假设a是变量，b,c,d是常量，TAC链由于a未知，整个链将在运行时计算。但是b+c+d是可以根据加法结合律提前运算的。
+    // 查找形如 t1=a+const1; t2=t1+const2; ... 的链式加法表达式，并将常量部分提前计算
+    bool changed = false;
+    
+    // 记录每个变量的定义：变量 -> (操作类型, 操作数1, 操作数2)
+    struct DefInfo {
+        TAC_OP op;
+        std::shared_ptr<SYM> left;   // 左操作数
+        std::shared_ptr<SYM> right;  // 右操作数
+        std::shared_ptr<TAC> tac;    // 定义该变量的TAC指令
+    };
+    
+    std::unordered_map<std::shared_ptr<SYM>, DefInfo> def_map;
+    
+    auto current = tac;
+    while (current != nullptr)
+    {
+        // 只处理加法和减法（可以应用结合律）
+        if ((current->op == TAC_OP::ADD || current->op == TAC_OP::SUB) && 
+            current->a && current->b && current->c)
+        {
+            // 记录定义信息
+            def_map[current->a] = {current->op, current->b, current->c, current};
+            
+            // 检查是否形成链：t2 = t1 + const 或 t2 = t1 - const
+            // 其中 t1 = var + const 或 t1 = var - const
+            
+            // 情况1: t2 = t1 op2 const2，其中 t1 = var op1 const1
+            if (current->b->type == SYM_TYPE::VAR)
+            {
+                auto it = def_map.find(current->b);
+                if (it != def_map.end())
+                {
+                    const auto& def = it->second;
+                    
+                    // 检查链条：左操作数是变量定义，右操作数是常量
+                    int const1, const2;
+                    bool left_has_const = def.right && def.right->get_const_value(const1);
+                    bool right_is_const = current->c->get_const_value(const2);
+                    
+                    // t1 = var op1 const1; t2 = t1 op2 const2
+                    // 可以转换为: t2 = var op1 (const1 op2' const2)
+                    if (left_has_const && right_is_const && 
+                        def.left && def.left->type == SYM_TYPE::VAR)
+                    {
+                        int combined_const = 0;
+                        TAC_OP new_op = def.op;
+                        
+                        // 计算合并后的常量
+                        if (def.op == TAC_OP::ADD && current->op == TAC_OP::ADD)
+                        {
+                            // var + c1 + c2 = var + (c1+c2)
+                            combined_const = const1 + const2;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::ADD && current->op == TAC_OP::SUB)
+                        {
+                            // var + c1 - c2 = var + (c1-c2)
+                            combined_const = const1 - const2;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::SUB && current->op == TAC_OP::ADD)
+                        {
+                            // var - c1 + c2 = var - (c1-c2) 或 var + (c2-c1)
+                            combined_const = const2 - const1;
+                            new_op = TAC_OP::ADD;
+                        }
+                        else if (def.op == TAC_OP::SUB && current->op == TAC_OP::SUB)
+                        {
+                            // var - c1 - c2 = var - (c1+c2)
+                            combined_const = const1 + const2;
+                            new_op = TAC_OP::SUB;
+                        }
+                        
+                        // 如果合并后的常量为负数且操作是ADD，转换为SUB
+                        if (new_op == TAC_OP::ADD && combined_const < 0)
+                        {
+                            new_op = TAC_OP::SUB;
+                            combined_const = -combined_const;
+                        }
+                        else if (new_op == TAC_OP::SUB && combined_const < 0)
+                        {
+                            new_op = TAC_OP::ADD;
+                            combined_const = -combined_const;
+                        }
+                        
+                        // 应用优化：直接使用原始变量和合并后的常量
+                        current->op = new_op;
+                        current->b = def.left;  // 使用链条起始的变量
+                        current->c = make_const(combined_const);
+                        
+                        // 更新定义映射
+                        def_map[current->a] = {new_op, def.left, current->c, current};
+                        
+                        changed = true;
+                    }
+                }
+            }
+            
+            // 情况2: t2 = const2 op2 t1，其中 t1 = const1 op1 var (仅适用于加法交换律)
+            if (current->op == TAC_OP::ADD && current->c->type == SYM_TYPE::VAR)
+            {
+                auto it = def_map.find(current->c);
+                if (it != def_map.end())
+                {
+                    const auto& def = it->second;
+                    
+                    int const1, const2;
+                    bool left_is_const = current->b->get_const_value(const2);
+                    bool def_left_is_const = def.left && def.left->get_const_value(const1);
+                    
+                    // t1 = const1 + var; t2 = const2 + t1
+                    if (def.op == TAC_OP::ADD && left_is_const && def_left_is_const &&
+                        def.right && def.right->type == SYM_TYPE::VAR)
+                    {
+                        // const2 + (const1 + var) = (const1+const2) + var
+                        int combined_const = const1 + const2;
+                        
+                        current->op = TAC_OP::ADD;
+                        current->b = def.right;  // 使用原始变量
+                        current->c = make_const(combined_const);
+                        
+                        def_map[current->a] = {TAC_OP::ADD, def.right, current->c, current};
+                        
+                        changed = true;
+                    }
+                }
+            }
+        }
+        // 如果变量被重新定义，清除其定义信息
+        else if (current->a && current->a->type == SYM_TYPE::VAR)
+        {
+            def_map.erase(current->a);
+        }
+        
+        if (current == end)
+            break;
+        current = current->next;
+    }
+    
     return changed;
 }
 
@@ -643,6 +363,10 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
         {
             changed = true;
         }
+        if(local_chain_folding(start,end))
+        {
+            changed = true;
+        }
     }
 }
 
@@ -651,10 +375,10 @@ bool TACOptimizer::global_constant_propagation(const std::vector<std::shared_ptr
 {
     bool changed = false;
     const int BOTTOM = INT_MIN;
-    
+    const auto& block_in=block_builder.get_block_in();
     for (auto& block : blocks)
     {
-        auto& in_constants = block_in[block].constants;
+        auto& in_constants = block_in.at(block).constants;
         auto current_constants = in_constants;
         
         auto tac = block->start;
@@ -701,14 +425,14 @@ bool TACOptimizer::global_constant_propagation(const std::vector<std::shared_ptr
             }
             
             // 更新当前常量状态
-            auto def = get_def(tac);
+            auto def = tac->get_def();
             if (def)
             {
                 // 简化计算
                 if (tac->op == TAC_OP::COPY)
                 {
                     int val;
-                    if (get_const_value(tac->b, val))
+                    if (tac->b->get_const_value(val))
                     {
                         current_constants[def] = val;
                     }
@@ -736,10 +460,10 @@ bool TACOptimizer::global_constant_propagation(const std::vector<std::shared_ptr
 bool TACOptimizer::global_dead_code_elimination(const std::vector<std::shared_ptr<BasicBlock>>& blocks)
 {
     bool changed = false;
-    
+    const auto& block_out=block_builder.get_block_out();
     for (auto& block : blocks)
     {
-        auto& out_live = block_out[block].live_vars;
+        auto& out_live = block_out.at(block).live_vars;
         auto current_live = out_live;
         
         // 收集块内指令
@@ -757,7 +481,7 @@ bool TACOptimizer::global_dead_code_elimination(const std::vector<std::shared_pt
         for (auto it = instructions.rbegin(); it != instructions.rend(); ++it)
         {
             auto& instr = *it;
-            auto def = get_def(instr);
+            auto def = instr->get_def();
             
             // 如果定义的变量不活跃，且指令没有副作用，可以删除
             if (def && current_live.find(def) == current_live.end())
@@ -804,7 +528,7 @@ bool TACOptimizer::global_dead_code_elimination(const std::vector<std::shared_pt
                 current_live.erase(def);
             }
             
-            auto uses = get_uses(instr);
+            auto uses = instr->get_uses();
             for (auto& use : uses)
             {
                 current_live.insert(use);
@@ -881,15 +605,15 @@ std::string TACOptimizer::get_expression_key(std::shared_ptr<TAC> tac) const
             std::string c_str = tac->c ? tac->c->to_string() : "";
             if (b_str > c_str)
                 std::swap(b_str, c_str);
-            key = "ADD_MUL:" + b_str + "," + c_str;
+            key = "+*:" + b_str + "," + c_str;
         }
         break;
     case TAC_OP::SUB:
-        key = "SUB:" + (tac->b ? tac->b->to_string() : "") + "," + 
+        key = "-:" + (tac->b ? tac->b->to_string() : "") + "," + 
               (tac->c ? tac->c->to_string() : "");
         break;
     case TAC_OP::DIV:
-        key = "DIV:" + (tac->b ? tac->b->to_string() : "") + "," + 
+        key = "/:" + (tac->b ? tac->b->to_string() : "") + "," + 
               (tac->c ? tac->c->to_string() : "");
         break;
     case TAC_OP::LT:
@@ -941,7 +665,7 @@ bool TACOptimizer::common_subexpression_elimination(std::shared_ptr<BasicBlock> 
         }
         
         // 如果有变量被重新定值，使相关表达式失效
-        auto def = get_def(tac);
+        auto def = tac->get_def();
         if (def)
         {
             // 移除包含该变量的表达式
@@ -992,7 +716,7 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             var_decl_in_loop[tac->a->name] = tac;
         }
 
-        auto def = get_def(tac);
+        auto def = tac->get_def();
         if (def)
         {
             defs_in_loop[def->name].push_back(tac);
@@ -1075,7 +799,7 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             if (!is_supported_op(instr->op))
                 continue;
 
-            auto def = get_def(instr);
+            auto def = instr->get_def();
             if (!def)
                 continue;
 
@@ -1152,19 +876,19 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             block->start = block->end;
     };
 
-    auto insert_before = [&](std::shared_ptr<TAC> node, std::shared_ptr<TAC> position) {
+    auto insert_after = [&](std::shared_ptr<TAC> node, std::shared_ptr<TAC> position) {
         if (!node || !position)
             return;
 
-        node->prev = position->prev;
-        node->next = position;
+        node->prev = position;
+        node->next = position->next;
 
-        if (position->prev)
-            position->prev->next = node;
-        position->prev = node;
+        if (position->next)
+            position->next->prev = node;
+        position->next = node;
 
-        if (preheader->start == position)
-            preheader->start = node;
+        if (preheader->end == position)
+            preheader->end = node;
 
         instr_block[node] = preheader;
     };
@@ -1173,7 +897,7 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
 
     for (auto& instr : ordered_to_move)
     {
-        auto def = get_def(instr);
+        auto def = instr->get_def();
         if (def)
         {
             auto decl_it = var_decl_in_loop.find(def->name);
@@ -1182,13 +906,15 @@ bool TACOptimizer::loop_invariant_code_motion(std::shared_ptr<BasicBlock> loop_h
             {
                 auto decl = decl_it->second;
                 remove_from_block(decl);
-                insert_before(decl, insertion_point);
+                insert_after(decl, insertion_point);
+                insertion_point = decl;  // Update insertion point to maintain order
                 changed = true;
             }
         }
 
         remove_from_block(instr);
-        insert_before(instr, insertion_point);
+        insert_after(instr, insertion_point);
+        insertion_point = instr;  // Update insertion point to maintain order
         changed = true;
     }
 
@@ -1213,7 +939,7 @@ bool TACOptimizer::simplify_control_flow(std::shared_ptr<TAC> tac_start)
         if (current->op == TAC_OP::IFZ && current->b)
         {
             int cond_value;
-            if (get_const_value(current->b, cond_value))
+            if (current->b->get_const_value( cond_value))
             {
                 // 条件是常量
                 if (cond_value == 0)
@@ -1442,8 +1168,14 @@ void TACOptimizer::optimize()
         global_iter++;
         
         std::clog << "\n=== Optimization Pass " << global_iter << " ===" << std::endl;
+
+        //局部优化（基本块内）
+        for (auto& block : blocks)
+        {
+            optimize_block_local(block);
+        }
         
-        // 1. 公共子表达式消除（每个基本块内）
+        // 公共子表达式消除（每个基本块内）
         for (auto& block : blocks)
         {
             if (common_subexpression_elimination(block))
@@ -1453,7 +1185,7 @@ void TACOptimizer::optimize()
             }
         }
         
-        // 2. 循环不变量外提
+        // 循环不变量外提
         for (auto& block : blocks)
         {
             if (is_loop_header(block))
@@ -1465,19 +1197,11 @@ void TACOptimizer::optimize()
                 }
             }
         }
-
-        // 3. 局部优化（基本块内）
-        for (auto& block : blocks)
-        {
-            optimize_block_local(block);
-        }
         
-        // 4. 数据流分析
-        compute_reaching_definitions(blocks);
-        compute_live_variables(blocks);
-        compute_constant_propagation(blocks);
+        // 数据流分析
+        block_builder.compute_data_flow();
         
-        // 5. 全局优化
+        // 全局优化
         if (global_constant_propagation(blocks))
         {
             global_changed = true;
@@ -1503,7 +1227,7 @@ void TACOptimizer::optimize()
             blocks = block_builder.get_basic_blocks();
         }
         
-        // 6. 控制流简化
+        // 控制流简化
         if (simplify_control_flow(tac_first))
         {
             global_changed = true;
@@ -1513,7 +1237,7 @@ void TACOptimizer::optimize()
             blocks = block_builder.get_basic_blocks();
         }
         
-        // 7. 不可达代码消除
+        // 不可达代码消除
         if (eliminate_unreachable_code(blocks))
         {
             global_changed = true;

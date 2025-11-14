@@ -69,6 +69,7 @@ int main(int argc, char *argv[])
         tac_generator.generate(program);
         
         auto& tac_gen = tac_generator.get_tac_generator();
+        tac_gen.complete();
         tac_gen.print_symbol_table();
 
         std::clog << "=== Original TAC ===" << std::endl;
