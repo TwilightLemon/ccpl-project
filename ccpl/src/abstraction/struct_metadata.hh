@@ -34,7 +34,7 @@ namespace twlm::ccpl::abstraction
     {
         std::string name;                        // Struct type name
         std::vector<StructFieldMetadata> fields; // Field definitions with complete type info
-        int total_size;                          // Total size in bytes/words (calculated after expansion)
+        int total_size;                          // Total size in bytes
 
         StructTypeMetadata() : total_size(0) {}
 
