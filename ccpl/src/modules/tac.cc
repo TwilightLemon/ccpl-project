@@ -465,6 +465,7 @@ void TACGenerator::begin_switch() {
 void TACGenerator::leave_switch() {
     if (in_switch()) {
         switch_stack.pop_back();
+        context_type_stack.pop_back();
     } else {
         error("Not in a switch context");
     }
@@ -747,24 +748,28 @@ void TACGenerator::enter_loop(std::shared_ptr<SYM> break_label, std::shared_ptr<
     ctx.continue_label = continue_label;
     ctx.loop_start_label = loop_start_label;
     loop_stack.push_back(ctx);
+
+    context_type_stack.push_back(ContextType::LOOP);
 }
 
 void TACGenerator::enter_switch(std::shared_ptr<SYM> break_label, std::shared_ptr<SYM> default_label) {
     switch_stack.push_back({break_label, default_label});
+    context_type_stack.push_back(ContextType::SWITCH);
 }
 
 void TACGenerator::leave_loop() {
     if (!loop_stack.empty()) {
         loop_stack.pop_back();
+        context_type_stack.pop_back();
     }
 }
 
 bool TACGenerator::in_loop() const {
-    return !loop_stack.empty();
+    return !loop_stack.empty() && context_type_stack.back() == ContextType::LOOP;
 }
 
 bool TACGenerator::in_switch() const {
-    return !switch_stack.empty();
+    return !switch_stack.empty() && context_type_stack.back() == ContextType::SWITCH;
 }
 
 std::shared_ptr<TAC> TACGenerator::do_break() {
