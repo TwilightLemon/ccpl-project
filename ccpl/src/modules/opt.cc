@@ -385,13 +385,13 @@ void TACOptimizer::optimize_block_local(std::shared_ptr<BasicBlock> block)
         {
             changed = true;
         }
-        if(local_binary_swapping(start,end)){
-            changed=true;
-        }
-        if(local_chain_folding(start,end))
-        {
-            changed = true;
-        }
+        // if(local_binary_swapping(start,end)){
+        //     changed=true;
+        // }
+        // if(local_chain_folding(start,end))
+        // {
+        //     changed = true;
+        // }
     }
 }
 

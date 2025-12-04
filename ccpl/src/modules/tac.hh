@@ -32,6 +32,12 @@ namespace twlm::ccpl::modules
         std::vector<LoopContext> loop_stack;
         std::vector<SwitchContext> switch_stack;
 
+        enum class ContextType {
+            LOOP,
+            SWITCH
+        };
+        std::vector<ContextType> context_type_stack;
+
     public:
         TACGenerator();
 
