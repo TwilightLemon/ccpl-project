@@ -76,6 +76,8 @@
 ">"  {  return yy::parser::make_GT();  }
 
 [ \t\r\n]|#.*
+\/\/[^\n]*\n? { /* ignore comments */ }
+"/*"([^*]|\*+[^/*])*\*+"/" { /* ignore multi-line comments */ }
 
 . 	{	return yy::parser::symbol_type(yytext[0]); }
 

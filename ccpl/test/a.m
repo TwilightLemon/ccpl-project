@@ -7,7 +7,7 @@ struct A{
     struct BB b[2];
 };
 int main(){
-    struct A a1[2];
+    struct A a1[2]; //你好
     int index;
     index=0;
     a1[index].id=1;
